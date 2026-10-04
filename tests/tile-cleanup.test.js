@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { convexTest } from 'convex-test';
 import schema from '../convex/schema.js';
 import { api, internal } from '../convex/_generated/api.js';

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { mutation } from '../src/lib/api.js';
 import { Visitor } from '../src/lib/engine/state.js';
 import { Acts } from '../src/lib/engine/tiles.js';

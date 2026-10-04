@@ -15,6 +15,6 @@ bun run check
 
 Add or update tests when changing backend rules, authentication, privacy, or save behavior. Tests use mock services; do not point them at production.
 
-Commit `bun.lock` when changing dependencies and keep the generated Convex API files in sync with backend changes. Keep real environment files, account exports, private keys, and local logs out of Git. CI checks both the build and Git history for secrets.
+Commit `bun.lock` when changing dependencies and keep the generated Convex API files in sync with backend changes. Keep real environment files, account exports, private keys, and local logs out of Git. CI runs Vite+ lint checks, tests, and the build, and scans Git history for secrets.
 
 By submitting a contribution, you agree that your source code contribution is licensed under the repository's AGPL-3.0-only license. Third-party assets must include their source, author, and applicable license.

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { convexTest } from 'convex-test';
 import { createHmac } from 'node:crypto';
 import { api, internal } from '../convex/_generated/api.js';
@@ -95,6 +95,35 @@ describe('Explore visibility', () => {
     expect((await a.query(api.boxes.mine)).showInExplore).toBe(false);
     await save(a, { showInExplore: true }, 2);
     expect((await a.query(api.boxes.mine)).showInExplore).toBe(true);
+    expect((await t.query(api.boxes.explore)).map(b => b.handle)).toEqual(['owner']);
+  });
+});
+
+describe('sitemap discovery', () => {
+  it('paginates across blank and opted-out boxes without exposing account data', async () => {
+    const t = convexTest(schema, modules);
+    await t.run(async ctx => {
+      for (let i = 0; i < 28; i++) await ctx.db.insert('boxes', {
+        handle: `box-${String(i).padStart(2, '0')}`, name: i === 27 ? 'Visible' : '', bio: '', tiles: [],
+        updatedAt: i, ...(i === 26 ? { name: 'Hidden', showInExplore: false } : {}),
+      });
+    });
+    const first = await t.query(api.boxes.sitemap, { paginationOpts: { cursor: null, numItems: 25 } });
+    expect(first.page).toEqual([]);
+    expect(first.isDone).toBe(false);
+    const second = await t.query(api.boxes.sitemap, { paginationOpts: { cursor: first.continueCursor, numItems: 25 } });
+    expect(second.isDone).toBe(true);
+    expect(second.page).toEqual([{ handle: 'box-27', updatedAt: 27 }]);
+  });
+
+  it('excludes unfinished tiles and includes finished content without an identity', async () => {
+    const t = convexTest(schema, modules), a = await owner(t);
+    await save(a, { tiles: [{ id: 'draft', type: 'link', draft: true }, { id: 'section', type: 'section', text: 'Work' }] });
+    const args = { paginationOpts: { cursor: null, numItems: 25 } };
+    expect((await t.query(api.boxes.sitemap, args)).page).toEqual([]);
+    expect(await t.query(api.boxes.explore)).toEqual([]);
+    await save(a, { tiles: [{ id: 'note', type: 'note', html: '<b>Hello</b>' }] }, 1);
+    expect((await t.query(api.boxes.sitemap, args)).page).toEqual([{ handle: 'owner', updatedAt: expect.any(Number) }]);
     expect((await t.query(api.boxes.explore)).map(b => b.handle)).toEqual(['owner']);
   });
 });

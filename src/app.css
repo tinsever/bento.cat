@@ -84,6 +84,30 @@ kbd { font: inherit; font-size: 12px; line-height: 16px; background: var(--curb)
 .grid { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); grid-auto-rows: var(--unit); gap: var(--gap); grid-auto-flow: row dense; }
 .grid:empty { display: none; }
 
+/* Public boxes have a complete layout before JavaScript measures anything. */
+.public-box { container: public-box / inline-size; }
+.public-box > .grid { --cols: var(--fixed-cols, 6); --unit: calc((100cqw - (var(--cols) - 1) * var(--gap)) / var(--cols)); }
+@container public-box (width < 980px) {
+  .public-box > .grid { --cols: var(--fixed-cols, 5); }
+}
+@container public-box (width < 814px) {
+  .public-box > .grid { --cols: var(--fixed-cols, 4); }
+}
+.public-box .tile-link { position: absolute; inset: 0; z-index: 1; border-radius: inherit; }
+.public-box .tile-link:focus-visible { outline: 3px solid var(--eye); outline-offset: -4px; }
+.public-box .tile [data-act], .public-box .tile form, .public-box .tile .gb-pad, .public-box .tile .hrs, .public-box .tile .sp-embed { position: relative; z-index: 2; }
+.public-box .tile .ba { z-index: 2; }
+.public-box .map-attr { z-index: 2; }
+@media (max-width: 759px) {
+  .public-box.responsive > .grid { --cols: var(--fixed-cols, 2); --gap: 14px; }
+  .public-box.responsive .bio { grid-column: span 2; grid-row: span 1; justify-content: flex-start; gap: 28px; padding: 0 0 12px; }
+  .public-box.responsive > .grid:first-child { grid-template-rows: auto; }
+  .public-box.responsive .tile { grid-column: span 1; grid-row: span 1; }
+  .public-box.responsive [data-mobile-size="loaf"] { grid-column: span 2; }
+  .public-box.responsive [data-mobile-size="tower"] { grid-row: span 2; }
+  .public-box.responsive [data-mobile-size="sprawl"] { grid-column: span 2; grid-row: span 2; }
+}
+
 .section { display: flex; align-items: baseline; gap: 14px; padding: 48px 0 14px; margin-bottom: 20px; border-bottom: 1px solid var(--line); position: relative; }
 .sec-title { font-size: 22px; font-weight: 600; letter-spacing: -.02em; line-height: 28px; min-width: 60px; }
 .section-ph { height: 64px; border: 1.5px dashed #BDBDBD; border-radius: 16px; margin: 28px 0 20px; }

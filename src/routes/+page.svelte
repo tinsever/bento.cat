@@ -3,8 +3,10 @@
 	import Nav from '#lib/components/Nav.svelte';
 	import Footer from '#lib/components/Footer.svelte';
 	import ClaimForm from '#lib/components/ClaimForm.svelte';
+	import PageMeta from '#lib/components/PageMeta.svelte';
+	import { SITE_DESCRIPTION, siteSchema } from '#lib/seo.js';
 	import { watch } from '#lib/api.js';
-	import { Box } from '#lib/engine/box.js';
+	import PublicBox from '#lib/components/PublicBox.svelte';
 	import { sz } from '#lib/engine/data.js';
 	import { Visitor } from '#lib/engine/state.js';
 	import { ALL_POSES, POSES, Tiles } from '#lib/engine/tiles.js';
@@ -15,8 +17,9 @@
 	const ORDER = ['loaf', 'sprawl', 'tower', 'curl'];
 
 	let { data } = $props();
-	let mia = $state.raw(data.mia);
-	let heroEl = $state();
+	let liveMia = $state.raw(undefined);
+	const mia = $derived(liveMia ?? data.mia);
+	const heroBox = $derived(mia ? { ...mia, tiles: HERO.map(id => mia.tiles.find(t => t.id === id)).filter(Boolean) } : null);
 	let pose = $state('loaf');
 	let cycle;
 
@@ -28,27 +31,19 @@
 		pose = p;
 	}
 
-	// A few of Mia's real tiles. Purring here purrs on her box too.
-	$effect(() => {
-		if (heroEl && mia) Box.render(heroEl, { ...mia, tiles: HERO.map(id => mia.tiles.find(t => t.id === id)).filter(Boolean) }, { mode: 'view', device: 'd', cols: 3, noBio: true, animate: true });
-	});
-
 	onMount(() => {
 		let i = 0;
 		cycle = setInterval(() => (pose = ORDER[++i % ORDER.length]), 2600);
 		const stop = watch('boxes:get', { handle: 'mia', visitorKey: Visitor.key }, box => {
 			if (!box) return;
 			Visitor.absorb(box);
-			mia = box;
+			liveMia = box;
 		}, () => {});
 		return () => { clearInterval(cycle); stop(); };
 	});
 </script>
 
-<svelte:head>
-	<title>bento.cat — A little box. A whole lot of you.</title>
-	<meta name="description" content="Your work, your links, your little obsessions. One personal page that feels like you." />
-</svelte:head>
+<PageMeta title="bento.cat — A little box. A whole lot of you." description={SITE_DESCRIPTION} schema={siteSchema} />
 
 <div class="land">
 	<Nav />
@@ -61,7 +56,7 @@
 		<div class="hero-r">
 			{#if mia}
 				<a class="hero-link" href="/mia">bento.cat/mia {@html I.arrow('#161616', 12)}</a>
-				<div class="hero-box" bind:this={heroEl}></div>
+				<div class="hero-box"><PublicBox box={heroBox} now={data.renderedAt} cols={3} noBio responsive={false} /></div>
 			{/if}
 		</div>
 	</section>

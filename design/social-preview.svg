@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <rect width="1200" height="630" fill="#F4F4F2"/>
+  <rect x="40" y="40" width="1120" height="550" rx="32" fill="#FFFFFF" stroke="#E8E8E4"/>
+  <g transform="translate(78 78) scale(1.2)"><path d='M8 26 L12 5 L26 18 H38 L52 5 L56 26 V50 Q56 58 48 58 H16 Q8 58 8 50 Z' fill='#161616'/><rect x='15' y='27' width='14' height='11' rx='3' fill='#F2C14E'/><rect x='35' y='27' width='14' height='11' rx='3' fill='#F2C14E'/><rect x='21' y='28.5' width='2.4' height='8' rx='1.2' fill='#161616'/><rect x='41' y='28.5' width='2.4' height='8' rx='1.2' fill='#161616'/><rect x='15' y='42' width='34' height='9' rx='3' fill='#FFFFFF'/></g>
+  <text x="174" y="135" font-family="Arial, sans-serif" font-size="44" font-weight="bold" fill="#161616">bento.cat</text>
+  <text x="88" y="275" font-family="Arial, sans-serif" font-size="76" font-weight="bold" letter-spacing="-3" fill="#161616">A little box.</text>
+  <text x="88" y="366" font-family="Arial, sans-serif" font-size="76" font-weight="bold" letter-spacing="-3" fill="#161616">A whole lot of you.</text>
+  <text x="90" y="460" font-family="Arial, sans-serif" font-size="28" fill="#707070">Your work, your links, your little obsessions.</text>
+  <rect x="90" y="508" width="239" height="38" rx="19" fill="#DCE3D8"/>
+  <text x="209" y="534" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" fill="#161616">One personal page. Yours.</text>
+</svg>

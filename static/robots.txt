@@ -1,3 +1,5 @@
 User-agent: *
 Disallow: /edit
 Disallow: /login
+
+Sitemap: https://bento.cat/sitemap.xml

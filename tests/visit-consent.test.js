@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { clearOptInLeftovers } from '../src/lib/visit-consent.js';
 import { Visitor } from '../src/lib/engine/state.js';
 

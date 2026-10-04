@@ -1,4 +1,5 @@
 import { query } from '../api.js';
+export { htmlText, sanitize } from '../rich-text.js';
 /* ---------- tiny helpers ---------- */
 
 export const $ = (s, r = document) => r.querySelector(s);
@@ -49,8 +50,8 @@ export function hoursIn(tz, d = new Date()) {
 export const localHours = (d = new Date()) => d.getHours() + d.getMinutes() / 60;
 
 // Their clock minus yours, in hours.
-export function tzOffset(tz) {
-  let diff = hoursIn(tz) - localHours();
+export function tzOffset(tz, d = new Date()) {
+  let diff = hoursIn(tz, d) - localHours(d);
   if (diff > 12) diff -= 24;
   if (diff < -12) diff += 24;
   return Math.round(diff * 4) / 4;
@@ -80,48 +81,13 @@ export function hostOf(url) {
 
 export const looksLikeUrl = s => /^(https?:\/\/)?[\w-]+(\.[\w-]+)+(\/\S*)?$/i.test(String(s).trim());
 
-export function relTime(ts) {
-  const s = (Date.now() - ts) / 1000;
+export function relTime(ts, now = Date.now()) {
+  const s = (now - ts) / 1000;
   if (s < 60) return 'just now';
   if (s < 3600) return `${Math.floor(s / 60)} min ago`;
   if (s < 86400) return plural(Math.floor(s / 3600), 'hour') + ' ago';
   const d = Math.floor(s / 86400);
   return d === 1 ? 'yesterday' : `${d} days ago`;
-}
-
-// Parse in a document that never renders, so <img onerror> and friends stay asleep.
-let inertDoc = null;
-const inert = () => (inertDoc ||= document.implementation.createHTMLDocument(''));
-
-export function htmlText(html) {
-  const d = inert().createElement('div');
-  d.innerHTML = String(html || '').replace(/<br\s*\/?>/gi, '\n').replace(/<\/(div|p)>/gi, '\n');
-  return d.textContent;
-}
-
-// Keep bold, italic and line breaks. Everything else becomes plain text.
-export function sanitize(html) {
-  const src = inert().createElement('div');
-  src.innerHTML = html;
-  let out = '';
-  const walk = (node, first) => {
-    for (const n of node.childNodes) {
-      if (n.nodeType === 3) { out += esc(n.nodeValue); continue; }
-      if (n.nodeType !== 1) continue;
-      const tag = n.tagName.toLowerCase();
-      if (tag === 'br') { out += '<br>'; continue; }
-      if (tag === 'b' || tag === 'strong') { out += '<b>'; walk(n); out += '</b>'; continue; }
-      if (tag === 'i' || tag === 'em') { out += '<i>'; walk(n); out += '</i>'; continue; }
-      if (tag === 'div' || tag === 'p' || tag === 'cite') {
-        if (out && !out.endsWith('<br>')) out += '<br>';
-        walk(n);
-        continue;
-      }
-      walk(n);
-    }
-  };
-  walk(src, true);
-  return out.replace(/(<br>)+$/, '').replace(/<b><\/b>|<i><\/i>/g, '').trim();
 }
 
 // *bold* and _italic_ typed by hand become real formatting.

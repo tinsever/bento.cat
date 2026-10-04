@@ -2,11 +2,12 @@
 	import Nav from '#lib/components/Nav.svelte';
 	import Footer from '#lib/components/Footer.svelte';
 	import { UPDATED } from '#lib/legal.js';
+	import PageMeta from './PageMeta.svelte';
 
 	let { title, lede = '', children } = $props();
 </script>
 
-<svelte:head><title>{title} — bento.cat</title></svelte:head>
+<PageMeta title="{title} — bento.cat" description={lede || 'Operator and contact information for bento.cat.'} />
 
 <div class="land">
 	<Nav />

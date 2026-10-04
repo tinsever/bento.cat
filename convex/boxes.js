@@ -1,4 +1,6 @@
 import { ConvexError, v } from 'convex/values';
+import { paginationOptsValidator } from 'convex/server';
+import { hasPublicContent } from '../src/lib/public-content.js';
 import { internal } from './_generated/api';
 import { internalMutation, mutation, query } from './_generated/server';
 import {
@@ -193,12 +195,25 @@ export const explore = query({
   args: {},
   handler: async ctx => {
     const picked = new Map();
-    const add = b => b && b.showInExplore !== false && b.tiles.length > 0 && picked.size < EXPLORE && picked.set(b._id, b);
+    const add = b => b && b.showInExplore !== false && b.tiles.some(t => t.type !== 'section' && !isBlank(t)) && picked.size < EXPLORE && picked.set(b._id, b);
     for (const row of await ctx.db.query('views').withIndex('by_count').order('desc').take(EXPLORE * 3)) add(await ctx.db.get(row.boxId));
     if (picked.size < EXPLORE) {
       for (const b of await ctx.db.query('boxes').withIndex('by_updated').order('desc').take(60)) if (!picked.has(b._id)) add(b);
     }
     return await Promise.all([...picked.values()].map(b => present(ctx, b, null)));
+  },
+});
+
+// Only public discovery data leaves this query, never owner or visitor details.
+export const sitemap = query({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, { paginationOpts }) => {
+    const result = await ctx.db.query('boxes').withIndex('by_handle').paginate({ ...paginationOpts, numItems: Math.min(paginationOpts.numItems, 100) });
+    return {
+      ...result,
+      page: result.page.filter(box => box.showInExplore !== false && hasPublicContent({ ...box, tiles: box.tiles.filter(t => !isBlank(t)) }))
+        .map(({ handle, updatedAt }) => ({ handle, updatedAt })),
+    };
   },
 });
 

@@ -1,6 +1,7 @@
 <script>
 	import Nav from '#lib/components/Nav.svelte';
 	import Footer from '#lib/components/Footer.svelte';
+	import PageMeta from '#lib/components/PageMeta.svelte';
 	import { CREDITS, IMG } from '#lib/engine/data.js';
 	import { bg } from '#lib/engine/tiles.js';
 	import { I } from '#lib/engine/util.js';
@@ -12,7 +13,7 @@
 	onMount(() => watch('files:assets', {}, m => (imgs = m), () => {}));
 </script>
 
-<svelte:head><title>Cat photo credits — bento.cat</title></svelte:head>
+<PageMeta title="Cat photo credits — bento.cat" description="Meet the cats behind bento.cat. Photo credits, sources, and licenses for the images used in our example boxes." />
 
 <div class="land">
 	<Nav />

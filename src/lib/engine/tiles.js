@@ -75,6 +75,17 @@ export function tilesFor(box, dev) {
 }
 export const tileKey = (box, t) => box.handle + '/' + t.id;
 
+// Public cards expose real destinations to crawlers and keyboard users.
+export function tileHref(t) {
+  if (t.draft) return '';
+  if (t.type === 'map' && (t.place || hasCoords(t))) return osmUrl(t);
+  if (!t.url) return '';
+  try {
+    const url = new URL(t.url);
+    return ['http:', 'https:', 'mailto:'].includes(url.protocol) ? url.href : '';
+  } catch { return ''; }
+}
+
 /* ---------- small renderer helpers ---------- */
 
 export function ce(c, field, rich = false) {
@@ -183,13 +194,13 @@ R.note = (t, c) => {
   const plain = htmlText(html).trim();
   if (isEmojiOnly(plain)) return `<div class="emoji ed" ${ce(c, 'html', true)}>${html}</div>`;
   const quote = isQuote(plain);
-  const meta = !quote && c.size !== 'curl' && t.updatedAt ? `<div class="t-meta note-meta">Updated ${relTime(t.updatedAt)}</div>` : '';
+  const meta = !quote && c.size !== 'curl' && t.updatedAt ? `<div class="t-meta note-meta">Updated ${relTime(t.updatedAt, c.now)}</div>` : '';
   return `<div class="note-text ed" ${ce(c, 'html', true)} data-ph="Write something…">${quote ? quoteHtml(html) : html}</div>${meta}`;
 };
 
 R.purr = (t, c) => {
-  const did = Visitor.get('purr', c.key(t));
-  return `<button class="paw-btn ${did ? 'on' : ''}" data-act="purr" aria-label="Leave a purr">${I.paw(did ? '#FFFFFF' : '#C2566B', 20)}</button>
+  const did = c.interactive !== false && Visitor.get('purr', c.key(t));
+  return `<button class="paw-btn ${did ? 'on' : ''}" data-act="purr" aria-label="Leave a purr" ${c.interactive === false ? 'disabled' : ''}>${I.paw(did ? '#FFFFFF' : '#C2566B', 20)}</button>
     <div class="purr-bottom"><div class="purr-count tnum">${odo(t.count)}</div><div class="t-sub purr-sub">${did ? 'You purred' : 'purrs. Tap to leave yours.'}</div></div>`;
 };
 
@@ -205,8 +216,8 @@ R.video = (t, c) => `${t.video
   <div class="vid-text"><div class="t-title ed" ${ce(c, 'title')} data-ph="Title">${esc(t.title || '')}</div><div class="vid-meta">${esc(t.meta || 'Plays muted on a loop')}</div></div>`;
 
 R.map = (t, c) => `${hasCoords(t)
-    ? `<div class="map-view"></div>
-  <a class="map-attr" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener" data-nodrag>© OpenStreetMap</a>`
+    ? `<div class="map-view">${c.interactive === false ? mapSvg(num(t.seed, 1)) : ''}</div>
+  ${c.mode === 'static' ? '<span class="map-attr">© OpenStreetMap</span>' : '<a class="map-attr" href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener" data-nodrag>© OpenStreetMap</a>'}`
     : `<div class="map-zoom" style="--z:${num(t.zoom, 1)}">${mapSvg(num(t.seed, 1))}</div>
   <div class="cloud c1"></div><div class="cloud c2"></div>
   <svg class="bird" width="14" height="6" viewBox="0 0 14 6"><path d="M1 4 Q4 0 7 4 Q10 0 13 4" fill="none" stroke="#6F7C80" stroke-width="1.4" stroke-linecap="round"/></svg>`}
@@ -232,7 +243,7 @@ R.music = (t, c) => {
   if (t.draft) return draftHtml(I.music(), 'Paste a Spotify link');
   const service = serviceOf(t.url);
   if (c.size === 'curl') return `<div class="vinyl solo">${vinylSvg(safeSrc(t.cover), t.id)}</div>${t.url ? (service ? `<span class="sp-badge">${spotifyGlyph(18)}</span>` : corner()) : ''}`;
-  const play = c.mode === 'view' ? 'button data-act="spotify" aria-label="Play here"' : 'span';
+  const play = c.mode === 'view' ? `button data-act="spotify" aria-label="Play here" ${c.interactive === false ? 'disabled' : ''}` : 'span';
   const go = !t.url ? '' : service
     ? `<${play} class="listen"><span class="sp-dot">${spotifyGlyph()}</span>Play</${play.split(' ')[0]}>`
     : `<span class="listen plain">Listen ${I.arrow('currentColor', 12)}</span>`;
@@ -264,13 +275,13 @@ R.github = (t, c) => {
     ${c.size === 'sprawl' ? `<div class="gh-foot"><span class="t-meta">The latest day is in honey. Hover a day.</span></div>` : ''}`;
 };
 
-R.status = (t, c) => `<div class="t-clock tnum"><span data-clock="${esc(t.tz)}">${timeIn(t.tz)}</span> in ${esc(t.city)}</div>
+R.status = (t, c) => `<div class="t-clock tnum"><span data-clock="${esc(t.tz)}">${timeIn(t.tz, c.now === undefined ? undefined : new Date(c.now))}</span> in ${esc(t.city)}</div>
   <div class="status-body"><div class="status-text ed" ${ce(c, 'text')} data-ph="What are you up to?">${esc(t.text)}</div><div class="t-meta ed" ${ce(c, 'meta')} data-ph="A small detail">${esc(t.meta || '')}</div></div>`;
 
 R.section = (t, c) => `<div class="sec-title ed" ${ce(c, 'text')} data-ph="Section title">${esc(t.text)}</div>`;
 
 R.sayname = (t, c) => `<div><div class="say-name ed" ${ce(c, 'name')} data-ph="Your name">${esc(t.name)}</div><div class="t-meta ed" ${ce(c, 'phon')} data-ph="How it sounds">${esc(t.phon)}</div></div>
-  <div class="say-row"><button class="play-btn dark" data-act="say" data-edit-ok aria-label="Hear it">${I.play('#fff')}</button>
+  <div class="say-row"><button class="play-btn dark" data-act="say" data-edit-ok aria-label="Hear it" ${c.interactive === false ? 'disabled' : ''}>${I.play('#fff')}</button>
   <svg class="wave" viewBox="0 0 230 32" preserveAspectRatio="none">${WAVE.map((hh, i) => `<line x1="${2 + i * 7}" x2="${2 + i * 7}" y1="${16 - hh / 2}" y2="${16 + hh / 2}"/>`).join('')}</svg>
   <span class="time tnum">${sayIdle(t)}</span></div>`;
 
@@ -301,7 +312,7 @@ R.guestbook = (t, c) => {
   const total = (Number(t.count) || 0) + (c.box.scribbles?.[t.id]?.total || 0);
   return `<div class="gb-head"><div class="t-title lg">Guestbook</div><div class="t-meta gb-count tnum">${plural(total, 'scribble')}</div></div>
   <div class="gb-pad" ${c.edit ? '' : 'data-nodrag'}><canvas></canvas><span class="gb-by"></span>${c.edit ? '' : '<span class="gb-hint">Draw something small</span>'}</div>
-  <form class="gb-form" data-form="guestbook" ${c.edit ? '' : 'data-nodrag'}><input name="name" placeholder="Your name" aria-label="Your name" maxlength="24" autocomplete="off" ${c.edit ? 'disabled' : ''}><button class="btn btn-dark sm" ${c.edit ? 'disabled' : ''}>Pin it</button></form>`;
+  <form class="gb-form" data-form="guestbook" ${c.edit ? '' : 'data-nodrag'}><input name="name" placeholder="Your name" aria-label="Your name" maxlength="24" autocomplete="off" ${c.edit || c.interactive === false ? 'disabled' : ''}><button class="btn btn-dark sm" ${c.edit || c.interactive === false ? 'disabled' : ''}>Pin it</button></form>`;
 };
 
 // Older tiles held a single photo. Without a second one there's nothing to compare, so it shows as a plain photo.
@@ -314,11 +325,11 @@ R.beforeafter = (t, c) => !t.before ? `<div class="ba-img" style="${bg(t.src, t.
   </div>`;
 
 R.subscribe = (t, c) => {
-  const done = Visitor.get('sub', c.key(t));
+  const done = c.interactive !== false && Visitor.get('sub', c.key(t));
   return `<div><div class="t-title lg ed" ${ce(c, 'title')} data-ph="Newsletter name">${esc(t.title)}</div><div class="t-meta ed" ${ce(c, 'sub')} data-ph="What it’s about">${esc(t.sub)}</div></div>
   <form class="sub-form ${done ? 'done' : ''}" data-form="subscribe" ${c.edit ? '' : 'data-nodrag'} novalidate>
-    <input type="email" name="email" placeholder="you@example.com" aria-label="Email address" autocomplete="email" ${c.edit ? 'disabled' : ''}>
-    <button class="sub-btn" ${c.edit ? 'type="button"' : ''}><span class="sub-label">Subscribe</span><span class="sub-done"><i>${I.check('#161616', 12)}</i>You’re on the list.</span></button>
+    <input type="email" name="email" placeholder="you@example.com" aria-label="Email address" autocomplete="email" ${c.edit || c.interactive === false ? 'disabled' : ''}>
+    <button class="sub-btn" ${c.edit ? 'type="button"' : ''} ${c.interactive === false ? 'disabled' : ''}><span class="sub-label">Subscribe</span><span class="sub-done"><i>${I.check('#161616', 12)}</i>You’re on the list.</span></button>
   </form>`;
 };
 
@@ -337,7 +348,7 @@ export const Tiles = {
       if (['left', 'center', 'right'].includes(t.align)) cl.push('al-' + t.align);
     }
     if (t.type === 'purr') cl.push('tint-' + tintOf(t));
-    if (t.type === 'purr' && Visitor.get('purr', c.key(t))) cl.push('purred');
+    if (t.type === 'purr' && c.interactive !== false && Visitor.get('purr', c.key(t))) cl.push('purred');
     if (c.mode === 'view' && ((t.url && !t.draft) || (t.type === 'map' && t.place))) cl.push('clickable');
     return cl.join(' ');
   },
@@ -399,9 +410,10 @@ export const Hydrate = {
       el.querySelector('.gb-by').textContent = strokes.length || !latest ? '' : `— ${latest.name}`;
     };
     el._gb = { draw, clear() { strokes = []; draw(); }, strokes: () => strokes };
-    new ResizeObserver(draw).observe(pad);
+    const observer = new ResizeObserver(draw);
+    observer.observe(pad);
     draw();
-    if (root._mode !== 'view') return;
+    if (root._mode !== 'view') return () => observer.disconnect();
     const pt = e => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left - fit.ox) / fit.s, y: (e.clientY - r.top - fit.oy) / fit.s }; };
     cv.addEventListener('pointerdown', e => {
       e.preventDefault();
@@ -413,6 +425,7 @@ export const Hydrate = {
     const end = () => { cur = null; };
     cv.addEventListener('pointerup', end);
     cv.addEventListener('pointercancel', end);
+    return () => observer.disconnect();
   },
 };
 
@@ -619,6 +632,10 @@ export function bindTileEvents() {
     if (!el) return;
     const t = root._box.tiles.find(x => x.id === el.dataset.id);
     if (!t) return;
+    if (e.target.closest('.tile-link')) {
+      if (t.demo || el.querySelector('.sp-embed')) { e.preventDefault(); if (t.demo) openTileUrl(t); }
+      return;
+    }
     const act = e.target.closest('[data-act]');
     if (act && el.contains(act)) {
       if (root._mode === 'edit' && !act.hasAttribute('data-edit-ok')) return;
@@ -631,6 +648,8 @@ export function bindTileEvents() {
     openTileUrl(t);
   });
 
+  // Run before SvelteKit intercepts GET forms for navigation. These forms submit
+  // through Convex after hydration and must never turn into profile query URLs.
   document.addEventListener('submit', e => {
     const form = e.target.closest('[data-form]');
     const root = form?.closest('.box-root');
@@ -639,7 +658,7 @@ export function bindTileEvents() {
     const el = form.closest('.tile[data-id]');
     const t = root._box.tiles.find(x => x.id === el.dataset.id);
     Forms[form.dataset.form]?.(form, el, t, root);
-  });
+  }, true);
 
   // Before / after wipe.
   document.addEventListener('pointerdown', e => {

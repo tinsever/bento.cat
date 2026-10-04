@@ -4,7 +4,9 @@
 	import Footer from '#lib/components/Footer.svelte';
 	import { mutation, watch } from '#lib/api.js';
 	import { auth } from '#lib/auth.svelte.js';
-	import { Box } from '#lib/engine/box.js';
+	import PublicBox from '#lib/components/PublicBox.svelte';
+	import PageMeta from '#lib/components/PageMeta.svelte';
+	import { profileMetadata, profileSchema } from '#lib/seo.js';
 	import { Visitor } from '#lib/engine/state.js';
 	import { Cat, I, catLogo } from '#lib/engine/util.js';
 
@@ -14,25 +16,12 @@
 	const box = $derived(live === undefined ? data.box : live);
 	const own = $derived(!!box?.isOwner || (auth.me?.box && auth.me.box.handle === data.handle));
 	const empty = $derived(box && !box.tiles.length);
-	const description = $derived(box ? box.bio?.replace(/<[^>]+>/g, '').slice(0, 160) || `${box.name || box.handle} on bento.cat` : 'An empty box on bento.cat.');
-
-	let root = $state();
-	const deviceNow = () => (typeof innerWidth === 'number' && innerWidth < 760 ? 'm' : 'd');
-	let device = deviceNow();
-
-	// Redraw whenever the box changes; tiles that moved slide to their new spot.
-	let drawn = false;
-	$effect(() => {
-		if (!root || !box) return;
-		Box.render(root, box, { mode: 'view', device, animate: drawn });
-		drawn = true;
-	});
+	const metadata = $derived(profileMetadata(box || data.box));
 
 	// Follow this box live. Runs again when you hop from one box to another.
 	$effect(() => {
 		const handle = data.handle;
 		live = undefined;
-		drawn = false;
 		return watch('boxes:get', { handle, visitorKey: Visitor.key }, b => {
 			Visitor.absorb(b);
 			live = b;
@@ -59,29 +48,12 @@
 	});
 
 	onMount(() => {
-		const onResize = () => {
-			const d = deviceNow();
-			if (d !== device && root && box) {
-				device = d;
-				Box.render(root, box, { mode: 'view', device, animate: true });
-			}
-		};
-		addEventListener('resize', onResize);
 		const t = setTimeout(() => Cat.flash('wide', 1300), 500);
-		return () => {
-			removeEventListener('resize', onResize);
-			clearTimeout(t);
-		};
+		return () => clearTimeout(t);
 	});
 </script>
 
-<svelte:head>
-	<title>{box ? `${box.name || box.handle} — bento.cat/${box.handle}` : `bento.cat/${data.handle}`}</title>
-	<meta name="description" content={description} />
-	<meta property="og:title" content={box ? box.name || `bento.cat/${box.handle}` : `bento.cat/${data.handle}`} />
-	<meta property="og:description" content={description} />
-	{#if box?.avatar}<meta property="og:image" content={box.avatar} />{/if}
-</svelte:head>
+<PageMeta {...metadata} imageAlt={box?.name || data.handle} schema={box ? profileSchema(box) : null} />
 
 {#if box}
 	<div class="pf">
@@ -90,7 +62,7 @@
 			{#if own}<a class="btn btn-line" href="/edit">Back to editing</a>{:else}<a class="btn btn-line" href="/">Make your own box</a>{/if}
 		</header>
 		<main class="pf-main">
-			<div bind:this={root}></div>
+			<PublicBox {box} now={data.renderedAt} />
 			{#if empty}
 				<p class="pf-empty">Nothing in the box yet. {#if own}<a href="/edit">Put something in it.</a>{:else}Check back soon.{/if}</p>
 			{/if}

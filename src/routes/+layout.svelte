@@ -11,8 +11,10 @@
 	import { initEngine, leavePage } from '#lib/engine/init.js';
 	import { setAssets } from '#lib/engine/data.js';
 	import { clearOptInLeftovers } from '#lib/visit-consent.js';
+	import { canonicalUrl, hasPublicContent } from '#lib/seo.js';
 
 	let { children } = $props();
+	const noindex = $derived(page.status >= 400 || page.route.id === '/edit' || page.route.id?.startsWith('/login') || (page.route.id === '/[handle]' && !hasPublicContent(page.data.box)));
 
 	// Before any page mounts: pages read the visitor key and auth state straight away.
 	if (browser) {
@@ -33,6 +35,15 @@
 		document.body.className = id === '/edit' ? 'pg-edit' : id.startsWith('/login') ? 'pg-auth' : id === '/[handle]' ? 'pg-profile' : '';
 	});
 </script>
+
+<svelte:head>
+	<meta property="og:site_name" content="bento.cat" />
+	<meta name="robots" content={noindex ? 'noindex' : 'index, follow, max-image-preview:large'} />
+	{#if !noindex}
+		<link rel="canonical" href={canonicalUrl(page.url.pathname)} />
+		<meta property="og:url" content={canonicalUrl(page.url.pathname)} />
+	{/if}
+</svelte:head>
 
 {@render children()}
 <div id="layer"></div>

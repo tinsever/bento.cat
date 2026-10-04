@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vite-plus/test';
 import { publicUrl } from '../convex/links.js';
 
 describe('link preview addresses', () => {

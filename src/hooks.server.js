@@ -5,6 +5,8 @@ export async function handle({ event, resolve }) {
 	res.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 	res.headers.set('X-Frame-Options', 'DENY');
 	res.headers.set('Permissions-Policy', 'camera=(), microphone=(self), geolocation=(self)');
+	if (res.status >= 400 || event.route.id === '/edit' || event.route.id?.startsWith('/login'))
+		res.headers.set('X-Robots-Tag', 'noindex');
 	return res;
 }
 

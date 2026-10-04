@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test';
 import { TYPING_PAUSE, createSaveQueue, draftJournal } from '../src/lib/save-queue.js';
 
 const copy = data => JSON.parse(JSON.stringify(data));

@@ -187,3 +187,8 @@ export function mountMap(el, t, mode) {
   if (mode === 'static') mountStatic(el, t, slot);
   else mountLive(el, t, slot);
 }
+
+export function unmountMap(el) {
+  if (el._map) drop(el._map);
+  if (!live.size) { clearInterval(sweeper); sweeper = 0; }
+}
