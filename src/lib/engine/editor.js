@@ -8,10 +8,7 @@ import { $, $$, Cat, I, Pop, applyMarks, catLogo, clamp, esc, fmtHour, fmtSec, h
 
 /* The editor. Edit right on the page; controls appear beside the thing you touch. */
 
-// Spread a set of add buttons evenly around the ring, starting at the top.
-const around = set => set.map((a, i) => ({ ...a, a: -90 + i * 360 / set.length }));
-
-export const ADD = around([
+export const ADD = [
   { kind: 'link', label: 'Link', icon: I.link },
   { kind: 'photo', label: 'Photo or video', icon: I.image },
   { kind: 'text', label: 'Note', icon: I.text },
@@ -19,10 +16,10 @@ export const ADD = around([
   { kind: 'music', label: 'Music', icon: I.music },
   { kind: 'section', label: 'Section title', icon: I.section },
   { kind: 'more', label: 'More tiles', icon: I.pawLine },
-]);
+];
 
-// The tiles that react. The paw swaps the dock and the ring over to these.
-export const MORE = around([
+// The tiles that react. The paw swaps the dock over to these.
+export const MORE = [
   { kind: 'purr', label: 'Purr', icon: I.heart },
   { kind: 'status', label: 'Status', icon: I.clock },
   { kind: 'sayname', label: 'Say my name', icon: I.wave },
@@ -30,7 +27,7 @@ export const MORE = around([
   { kind: 'guestbook', label: 'Guestbook', icon: I.pen },
   { kind: 'beforeafter', label: 'Before and after', icon: I.split },
   { kind: 'subscribe', label: 'Subscribe', icon: I.mail },
-]);
+];
 
 // Where the visitor's clock is, so time tiles start out right.
 const myZone = () => {
@@ -84,7 +81,7 @@ export function EditorView(app, box, opts = {}) {
     device: innerWidth < 760 ? 'm' : 'd',
     sel: null, undo: [], redo: [], press: null, drag: null,
     knockAsk: false, crop: null, focusId: null, editing: null, fresh: new Set(),
-    pending: 0, ring: null, palette: null, prevDone: null, clHidden: false, timers: [],
+    pending: 0, palette: null, prevDone: null, clHidden: false, timers: [],
   };
   const firstName = () => (box.name || '').trim().split(' ')[0];
 
@@ -779,7 +776,7 @@ export function EditorView(app, box, opts = {}) {
     if (sx) { commit(bx => { bx.suggestions = (bx.suggestions || []).filter(s => s.kind !== sx.dataset.sugx); }); return; }
     const sg = e.target.closest('[data-sug]');
     if (sg) { const s = (box.suggestions || []).find(x => x.kind === sg.dataset.sug); add(s.kind, box.tiles.length, { sug: s.kind, size: s.size }); return; }
-    if (e.target.closest('[data-addslot]')) { openRing(e.clientX, e.clientY, box.tiles.length); return; }
+    if (e.target.closest('[data-addslot]')) { openPalette(box.tiles.length); return; }
     if (!e.target.closest('[data-key]')) select(null);
   });
 
@@ -992,7 +989,7 @@ export function EditorView(app, box, opts = {}) {
   }
 
   async function add(kind, index = nearViewIndex(), extra = {}) {
-    Pop.close(); closeRing();
+    Pop.close();
     const id = uid();
     const size = sz(extra.size || ({ link: 'curl', text: 'loaf', map: 'loaf', music: 'loaf', section: 'loaf' })[kind] || 'curl');
     let t;
@@ -1119,83 +1116,6 @@ export function EditorView(app, box, opts = {}) {
     done();
   }
 
-  /* ---------- add ring ---------- */
-
-  function arcPath(a1) {
-    if (a1 <= -90) return '';
-    const r = 108, c = 154, rad = a => a * Math.PI / 180;
-    const x0 = c + r * Math.cos(rad(-90)), y0 = c + r * Math.sin(rad(-90));
-    const x1 = c + r * Math.cos(rad(a1)), y1 = c + r * Math.sin(rad(a1));
-    return `M${x0} ${y0} A${r} ${r} 0 ${a1 + 90 > 180 ? 1 : 0} 1 ${x1.toFixed(1)} ${y1.toFixed(1)}`;
-  }
-
-  function openRing(x, y, index) {
-    closeRing(); Pop.close(); select(null);
-    // Leave room for the labels that stick out to either side.
-    x = innerWidth >= 520 ? clamp(x, 240, innerWidth - 250) : innerWidth / 2;
-    const ring = h(`<div class="ring still" style="left:${x + scrollX}px;top:${y + scrollY}px">
-      <div class="ring-band"></div>
-      <svg class="ring-svg" viewBox="0 0 308 308"><circle cx="154" cy="154" r="108" fill="none" stroke="#E0E0DC" stroke-width="1.2" stroke-dasharray="3 5"/><path class="ring-arc" d="" fill="none" stroke="#161616" stroke-width="2.4" stroke-linecap="round"/></svg>
-      ${ringButtons(ADD)}
-      <button class="ring-x" aria-label="Close">${I.close()}</button>
-    </div>`);
-    $('#layer').append(ring);
-    const safeTop = $('.ed-head', app).offsetHeight + 8, safeBottom = innerHeight - 96;
-    const over = (y + 158) - safeBottom, under = safeTop - (y - 158);
-    if (over > 0 && under < 0) scrollBy({ top: Math.min(over, -under), behavior: 'smooth' });
-    else if (under > 0) scrollBy({ top: -under, behavior: 'smooth' });
-    requestAnimationFrame(() => requestAnimationFrame(() => ring.classList.add('open')));
-    const arc = ring.querySelector('.ring-arc');
-    const point = e => {
-      const b = e.target.closest('.ring-b');
-      arc.setAttribute('d', b ? arcPath(+b.dataset.a) : '');
-    };
-    ring.addEventListener('pointerover', e => { if (!ring.classList.contains('still')) point(e); });
-    // The buttons fly out under a cursor that hasn't moved. Only a real move lights them up.
-    const moved = e => {
-      if (!e.movementX && !e.movementY) return;
-      if (ring.classList.contains('still')) { ring.classList.remove('still'); point(e); }
-    };
-    document.addEventListener('pointermove', moved);
-    ring.addEventListener('click', e => {
-      const b = e.target.closest('.ring-b');
-      if (b) { if (b.dataset.ring === 'more') flipRing(ring, true); else add(b.dataset.ring, index); return; }
-      const x = e.target.closest('.ring-x');
-      if (x) { if (x.dataset.back) flipRing(ring, false); else closeRing(); }
-    });
-    const out = e => { if (!ring.contains(e.target)) closeRing(); };
-    setTimeout(() => document.addEventListener('pointerdown', out, true));
-    S.ring = { el: ring, off: () => { document.removeEventListener('pointerdown', out, true); document.removeEventListener('pointermove', moved); } };
-  }
-
-  const ringButtons = set => set.map((a, i) => `<button class="ring-b" data-ring="${a.kind}" data-a="${a.a}" style="--a:${a.a}deg;--i:${i}" aria-label="${a.label}"><span class="ring-ic">${a.icon('#161616', 18)}</span><em class="${Math.cos(a.a * Math.PI / 180) < -0.1 ? 'l' : 'r'}">${a.label}</em></button>`).join('');
-
-  // The ring folds its buttons back into the middle and fans out the other set.
-  function flipRing(ring, more) {
-    ring.classList.remove('open');
-    ring.classList.add('still');
-    ring.querySelector('.ring-arc').setAttribute('d', '');
-    setTimeout(() => {
-      ring.querySelectorAll('.ring-b').forEach(b => b.remove());
-      ring.querySelector('.ring-x').insertAdjacentHTML('beforebegin', ringButtons(more ? MORE : ADD));
-      const x = ring.querySelector('.ring-x');
-      x.innerHTML = more ? I.back() : I.close();
-      x.setAttribute('aria-label', more ? 'Back' : 'Close');
-      if (more) x.dataset.back = '1'; else delete x.dataset.back;
-      requestAnimationFrame(() => requestAnimationFrame(() => ring.classList.add('open')));
-    }, 200);
-  }
-
-  function closeRing() {
-    if (!S.ring) return;
-    const { el, off } = S.ring;
-    S.ring = null;
-    off();
-    el.classList.remove('open');
-    el.classList.add('closing');
-    setTimeout(() => el.remove(), 260);
-  }
-
   /* ---------- dock ---------- */
 
   const dock = $('#dockTools', app);
@@ -1239,42 +1159,42 @@ export function EditorView(app, box, opts = {}) {
 
   /* ---------- ⌘K ---------- */
 
-  function paletteItems(q) {
+  function paletteItems(q, index) {
     const ql = q.toLowerCase();
     const out = [];
     if (q && looksLikeUrl(q)) {
       const g = guessLink(q);
-      out.push({ icon: I.link(), title: `Add ${hostOf(q)}`, sub: g.type === 'link' ? 'A link with its title and picture' : `Becomes a ${TYPES[g.type].label.toLowerCase()} tile`, run: () => insertResolved(q) });
+      out.push({ icon: I.link(), title: `Add ${hostOf(q)}`, sub: g.type === 'link' ? 'A link with its title and picture' : `Becomes a ${TYPES[g.type].label.toLowerCase()} tile`, run: () => insertResolved(q, index) });
     }
     const pool = [
-      { icon: I.image(), title: 'Upload a photo or video', sub: 'From your computer', words: 'photo image video upload file picture', run: () => add('photo') },
-      { icon: I.link(), title: 'Add a link', sub: 'Your work, a shop, anything with an address', words: 'link url website page', run: () => add('link') },
-      { icon: I.text(), title: 'Write a note', sub: 'A few words, a quote, an emoji', words: 'note text write quote', run: () => add('text') },
-      { icon: I.music(), title: 'Add a song or playlist', sub: 'Spotify', words: 'music song playlist album podcast spotify', run: () => add('music') },
-      { icon: I.pin(), title: 'Add a map', sub: 'Where you are, or a place you love', words: 'map place where location city', run: () => add('map') },
-      { icon: I.section(), title: 'Add a section title', sub: 'A heading between tiles', words: 'section heading title divider', run: () => add('section') },
-      { icon: I.heart(), title: 'Add a purr', sub: 'Visitors tap to leave a purr', words: 'purr paw like counter react', run: () => add('purr') },
-      { icon: I.clock(), title: 'Add a status', sub: 'What you’re up to, with your local time', words: 'status now doing time react', run: () => add('status') },
-      { icon: I.wave(), title: 'Add say my name', sub: 'How your name sounds', words: 'say name pronounce sound audio react', run: () => add('sayname') },
-      { icon: I.sunrise(), title: 'Add good time to write', sub: 'Your waking hours in their time', words: 'hours time zone available write react', run: () => add('hours') },
-      { icon: I.pen(), title: 'Add a guestbook', sub: 'Visitors draw something small', words: 'guestbook draw scribble sign react', run: () => add('guestbook') },
-      { icon: I.split(), title: 'Add before and after', sub: 'Two photos, one handle to wipe', words: 'before after compare photo react', run: () => add('beforeafter') },
-      { icon: I.mail(), title: 'Add a subscribe box', sub: 'Collect emails for your newsletter', words: 'subscribe newsletter email list react', run: () => add('subscribe') },
+      { icon: I.image(), title: 'Upload a photo or video', sub: 'From your computer', words: 'photo image video upload file picture', run: () => add('photo', index) },
+      { icon: I.link(), title: 'Add a link', sub: 'Your work, a shop, anything with an address', words: 'link url website page', run: () => add('link', index) },
+      { icon: I.text(), title: 'Write a note', sub: 'A few words, a quote, an emoji', words: 'note text write quote', run: () => add('text', index) },
+      { icon: I.music(), title: 'Add a song or playlist', sub: 'Spotify', words: 'music song playlist album podcast spotify', run: () => add('music', index) },
+      { icon: I.pin(), title: 'Add a map', sub: 'Where you are, or a place you love', words: 'map place where location city', run: () => add('map', index) },
+      { icon: I.section(), title: 'Add a section title', sub: 'A heading between tiles', words: 'section heading title divider', run: () => add('section', index) },
+      { icon: I.heart(), title: 'Add a purr', sub: 'Visitors tap to leave a purr', words: 'purr paw like counter react', run: () => add('purr', index) },
+      { icon: I.clock(), title: 'Add a status', sub: 'What you’re up to, with your local time', words: 'status now doing time react', run: () => add('status', index) },
+      { icon: I.wave(), title: 'Add say my name', sub: 'How your name sounds', words: 'say name pronounce sound audio react', run: () => add('sayname', index) },
+      { icon: I.sunrise(), title: 'Add good time to write', sub: 'Your waking hours in their time', words: 'hours time zone available write react', run: () => add('hours', index) },
+      { icon: I.pen(), title: 'Add a guestbook', sub: 'Visitors draw something small', words: 'guestbook draw scribble sign react', run: () => add('guestbook', index) },
+      { icon: I.split(), title: 'Add before and after', sub: 'Two photos, one handle to wipe', words: 'before after compare photo react', run: () => add('beforeafter', index) },
+      { icon: I.mail(), title: 'Add a subscribe box', sub: 'Collect emails for your newsletter', words: 'subscribe newsletter email list react', run: () => add('subscribe', index) },
       { icon: I.arrow('#161616', 16), title: 'Share your box', sub: `bento.cat/${box.handle}`, words: 'share copy link tweet', run: () => openShare($('[data-ed="share"]', app)) },
       { icon: I.search(), title: 'See your visits', sub: 'Who came by, and when', words: 'visits stats views analytics', run: () => openVisits() },
       { icon: I.section(), title: 'Page settings', sub: 'Your address, discovery, your data', words: 'settings address handle rename explore discovery visibility export delete', run: () => openSettings($('#bSettings', app)) },
     ];
     for (const it of pool) if (!ql || ql.split(/\s+/).every(w => (it.title + ' ' + it.words).toLowerCase().includes(w))) out.push(it);
     if (q) {
-      out.push({ icon: I.text(), title: `Note that says “${q}”`, sub: 'Start a text tile with this', run: () => add('text', undefined, { text: q }) });
-      out.push({ icon: I.section(), title: `Section called “${q}”`, sub: 'A heading between tiles', run: () => add('section', undefined, { text: q }) });
+      out.push({ icon: I.text(), title: `Note that says “${q}”`, sub: 'Start a text tile with this', run: () => add('text', index, { text: q }) });
+      out.push({ icon: I.section(), title: `Section called “${q}”`, sub: 'A heading between tiles', run: () => add('section', index, { text: q }) });
     }
     return out.slice(0, 7);
   }
 
-  function openPalette() {
+  function openPalette(index) {
     if (S.palette) return;
-    closeRing(); Pop.close();
+    Pop.close();
     const ov = h(`<div class="palette-wrap"><div class="palette">
       <div class="pal-in">${I.search()}<input placeholder="Paste a link or type anything" spellcheck="false" autocomplete="off"><kbd>⌘K</kbd></div>
       <div class="pal-list"></div></div></div>`);
@@ -1285,7 +1205,7 @@ export function EditorView(app, box, opts = {}) {
     const close = () => { ov.classList.remove('in'); setTimeout(() => ov.remove(), 180); S.palette = null; };
     const run = it => { close(); it.run(); };
     const draw = () => {
-      items = paletteItems(input.value.trim());
+      items = paletteItems(input.value.trim(), index);
       active = clamp(active, 0, Math.max(0, items.length - 1));
       list.innerHTML = items.map((it, i) => `<button class="pal-item ${i === active ? 'on' : ''}" data-i="${i}">
         ${it.thumb ? `<span class="pal-thumb" style="${bg(it.thumb)}"></span>` : `<span class="pal-ic">${it.icon}</span>`}
@@ -1702,7 +1622,7 @@ export function EditorView(app, box, opts = {}) {
     switch (b.dataset.cl) {
       case 'hide': S.clHidden = true; syncChecklist(); toast('Tucked away. It’s in your menu if you want it back.'); return;
       case 'photo': return pickAvatar();
-      case 'three': { const slot = canvas.querySelector('[data-addslot]'); const r = slot.getBoundingClientRect(); slot.scrollIntoView({ block: 'center', behavior: 'smooth' }); setTimeout(() => { const r2 = slot.getBoundingClientRect(); openRing(r2.left + r2.width / 2, r2.top + r2.height / 2, box.tiles.length); }, r.top < 0 || r.bottom > innerHeight ? 450 : 0); return; }
+      case 'three': return openPalette(box.tiles.length);
       case 'line': canvas.querySelector('.bio-line')?.scrollIntoView({ block: 'center' }); focusTile('__bio'); canvas.querySelector('.bio-line')?.focus(); return;
       case 'share': return openShare($('[data-ed="share"]', app));
     }
@@ -1754,8 +1674,7 @@ export function EditorView(app, box, opts = {}) {
     if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
     if (mod && k === 'y') { e.preventDefault(); redo(); return; }
     if (e.key === 'Escape') {
-      if (S.ring) closeRing();
-      else if (S.crop) cropDone();
+      if (S.crop) cropDone();
       else if (S.knockAsk) { S.knockAsk = false; buildToolbar(); }
       else select(null);
       return;
@@ -1809,7 +1728,7 @@ export function EditorView(app, box, opts = {}) {
   }
 
   const onScroll = () => placeToolbarNow();
-  const onResize = () => { placeToolbarNow(); closeRing(); };
+  const onResize = () => placeToolbarNow();
   addEventListener('keydown', onKey);
   addEventListener('paste', onPaste);
   addEventListener('dragenter', onDragEnter);
@@ -1859,7 +1778,6 @@ export function EditorView(app, box, opts = {}) {
     removeEventListener('scroll', onScroll);
     removeEventListener('resize', onResize);
     removeEventListener('touchmove', preventTouch);
-    closeRing();
     S.palette?.close();
     $$('.drawer-wrap').forEach(d => d.remove());
   };

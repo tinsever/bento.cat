@@ -597,28 +597,6 @@ button.knock:hover { background: #2C2C2C; }
 .seg button.on { background: #fff; box-shadow: 0 1px 2px rgba(22, 22, 22, .12); opacity: 1; }
 .dock .btn.sm { height: 40px; border-radius: 14px; padding: 0 18px; }
 
-/* add ring */
-.ring { position: absolute; width: 308px; height: 308px; margin: -154px 0 0 -154px; z-index: 400; pointer-events: none; }
-.ring > * { pointer-events: auto; }
-.ring-band { position: absolute; inset: 8px; border-radius: 50%; background: radial-gradient(circle, transparent 69px, rgba(244, 244, 242, .97) 70px, rgba(244, 244, 242, .97) 145px, transparent 146px); transform: scale(.4); opacity: 0; transition: transform .4s var(--ease), opacity .2s; filter: drop-shadow(0 18px 30px rgba(22, 22, 22, .14)); pointer-events: none; }
-.ring.open .ring-band { transform: none; opacity: 1; }
-.ring-svg { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .3s .1s; }
-.ring.open .ring-svg { opacity: 1; }
-.ring-b { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px; border-radius: 26px; background: #fff; box-shadow: 0 1px 3px rgba(22, 22, 22, .14); display: grid; place-items: center; opacity: 0; transform: rotate(var(--a)) translate(0) rotate(calc(-1 * var(--a))) scale(.4); transition: transform .45s var(--pop) calc(var(--i) * 30ms), opacity .2s calc(var(--i) * 30ms), background .15s, box-shadow .15s; }
-.ring.open .ring-b { opacity: 1; transform: rotate(var(--a)) translate(108px) rotate(calc(-1 * var(--a))); }
-.ring.open:not(.still) .ring-b:hover, .ring.open .ring-b:focus-visible { background: var(--fur); transform: rotate(var(--a)) translate(108px) rotate(calc(-1 * var(--a))) scale(1.12); transition-delay: 0s; box-shadow: 0 8px 18px -8px rgba(22, 22, 22, .5); outline: none; }
-.ring:not(.still) .ring-b:hover svg *, .ring-b:focus-visible svg * { stroke: #fff; }
-.ring:not(.still) .ring-b:hover svg [fill]:not([fill="none"]), .ring-b:focus-visible svg [fill]:not([fill="none"]) { fill: #fff; }
-.ring-ic { display: grid; }
-.ring-b em { position: absolute; top: 50%; transform: translateY(-50%); font-style: normal; font-size: 13px; font-weight: 500; color: var(--fur); background: #fff; border-radius: 10px; padding: 6px 11px; box-shadow: 0 1px 3px rgba(22, 22, 22, .14); white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity .15s; }
-.ring-b em.r { left: calc(100% + 10px); }
-.ring-b em.l { right: calc(100% + 10px); }
-.ring:not(.still) .ring-b:hover em, .ring-b:focus-visible em { opacity: 1; }
-.ring-x { position: absolute; left: 50%; top: 50%; width: 40px; height: 40px; margin: -20px; border-radius: 20px; background: #fff; border: 1px solid var(--line2); display: grid; place-items: center; transform: scale(0); transition: transform .3s var(--pop); }
-.ring.open .ring-x { transform: none; }
-.ring-x:hover { border-color: #A3A3A0; }
-.ring.closing .ring-b { transition-delay: 0s; transition-duration: .2s; }
-
 /* ⌘K */
 .palette-wrap { position: fixed; inset: 0; z-index: 500; background: rgba(255, 255, 255, .45); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); display: flex; justify-content: center; align-items: flex-start; padding-top: 18vh; opacity: 0; transition: opacity .18s; }
 .palette-wrap.in { opacity: 1; }
@@ -1035,7 +1013,6 @@ body:has(.checklist:not([hidden])) .ed-page { padding-bottom: 380px; }
 }
 
 @media (max-width: 560px) {
-  .ring-b em.l, .ring-b em.r { left: 50%; right: auto; top: calc(100% + 6px); transform: translateX(-50%); }
   .hero-r { display: none; }
   /* The chip says more than the address on a demo box, and both don't fit beside the button. */
   .pf-handle:has(.example-chip) > span:not(.example-chip) { display: none; }
