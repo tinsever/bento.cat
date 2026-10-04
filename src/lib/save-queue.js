@@ -38,7 +38,7 @@ export function draftJournal(boxId, storage, session) {
   };
 }
 
-export const TYPING_PAUSE = 1500;
+export const TYPING_PAUSE = 500;
 
 export function createSaveQueue({ revision = 0, lastSaveId, getData, save, journal, onState = () => {}, onConflict = () => {}, onStorageError = () => {} }) {
   let pending = 0, inFlight = null, timer, disposed = false, paused = false, attempt = null, storageWarned = false, rejected = false, burst = false, urgent = false;
@@ -69,12 +69,13 @@ export function createSaveQueue({ revision = 0, lastSaveId, getData, save, journ
   }
   // Keystrokes in a field are one change. The draft stays current on every key,
   // but the save waits for a pause in the typing, or for the field to let go.
+  // Until then it's only 'typing': nothing is being saved yet.
   function changed({ typing = false } = {}) {
     if (rejected && !paused) { attempt = null; rejected = false; }
     if (!burst) pending++;
     burst = typing;
     persist();
-    onState(paused ? 'error' : 'saving', pending);
+    onState(paused ? 'error' : typing ? 'typing' : 'saving', pending);
     schedule(typing ? TYPING_PAUSE : 700);
   }
   async function drain() {
@@ -83,6 +84,7 @@ export function createSaveQueue({ revision = 0, lastSaveId, getData, save, journ
       if (!attempt) burst = false;
       attempt ||= { data: copy(getData()), expectedRevision: revision, saveId: id(), count: pending };
       persist();
+      onState('saving', pending);
       try {
         const { count, ...args } = attempt;
         const result = await save(copy(args));

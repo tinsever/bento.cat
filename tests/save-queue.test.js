@@ -45,6 +45,16 @@ describe('autosave recovery', () => {
     expect(t.save.mock.calls[0][0].data.name).toBe('Firs');
     expect(Math.max(...states)).toBe(1);
   });
+  it('only reports saving once the typing pauses', async () => {
+    const states = [];
+    const t = setup({ onState: state => states.push(state) });
+    t.queue.changed({ typing: true });
+    await vi.advanceTimersByTimeAsync(TYPING_PAUSE - 100);
+    t.queue.changed({ typing: true });
+    expect(states).toEqual(['typing', 'typing']);
+    await vi.advanceTimersByTimeAsync(TYPING_PAUSE);
+    expect(states).toEqual(['typing', 'typing', 'saving', 'saved']);
+  });
   it('saves keys typed while the previous burst is being saved', async () => {
     let resolve;
     const save = vi.fn(args => new Promise(r => { resolve = () => r({ revision: args.expectedRevision + 1 }); }));

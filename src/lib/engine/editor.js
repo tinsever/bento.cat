@@ -220,7 +220,8 @@ export function EditorView(app, box, opts = {}) {
     save: args => mutation('boxes:save', args), journal: draftJournal(box._id, local, session),
     onState(state, pending) {
       S.pending = pending;
-      if (!alive) return;
+      // Mid-word there's nothing to show yet; the pill waits for the save itself.
+      if (!alive || state === 'typing') return;
       setSave(state);
       if (state === 'saved') S.idleT = setTimeout(() => { if (alive) setSave('idle'); }, 1500);
     },
@@ -232,6 +233,10 @@ export function EditorView(app, box, opts = {}) {
   function setSave(state) {
     const el = $('#save', app);
     if (!el) return;
+    // Drawing the same pill again would restart its progress bar.
+    const shown = `${state}:${S.pending}`;
+    if (el._shown === shown) return;
+    el._shown = shown;
     el.className = 'save ' + state;
     if (state === 'idle') el.innerHTML = `${I.check('#707070', 16, 1.5)}<span>All changes saved</span>`;
     if (state === 'saving') el.innerHTML = `<span class="save-pill"><svg width="18" height="18" viewBox="0 0 64 64"><path d="M8 26 L12 5 L26 18 H38 L52 5 L56 26 V50 Q56 58 48 58 H16 Q8 58 8 50 Z" fill="#FFFFFF"/><rect x="15" y="27" width="14" height="11" rx="3" fill="#F2C14E"/><rect x="35" y="27" width="14" height="11" rx="3" fill="#F2C14E"/></svg><span class="tnum">Saving ${plural(S.pending, 'change')}</span><i class="save-bar"><b></b></i></span>`;
