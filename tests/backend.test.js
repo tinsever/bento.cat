@@ -417,4 +417,83 @@ describe('subscriber emails', () => {
     expect(lists[0].people[0]).not.toHaveProperty('visitorKey');
     expect(await b.query(api.moderation.lists)).toEqual([]);
   });
+
+  it.each(['network', 429, 503])('retries a temporary failure (%s) with the same idempotency key', async failure => {
+    vi.stubEnv('BREVO_API_KEY', 'xkeysib-test');
+    const fetch = vi.fn().mockImplementationOnce(async () => {
+      if (failure === 'network') throw new Error('Connection reset');
+      return new Response('{}', { status: failure });
+    }).mockResolvedValue(new Response('{}', { status: 201 }));
+    vi.stubGlobal('fetch', fetch);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const t = convexTest(schema, modules), a = await owner(t);
+    await save(a, { tiles: [{ id: 'list', type: 'subscribe', title: 'News' }] });
+    await join(t, (await a.query(api.boxes.mine))._id, 'cat@example.com');
+    await run(t);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(30_000);
+    await run(t);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    const [first, second] = sent(fetch);
+    expect(first.headers.idempotencyKey).toMatch(/^[a-f0-9-]{36}$/);
+    expect(second.headers.idempotencyKey).toBe(first.headers.idempotencyKey);
+    expect(await t.run(ctx => ctx.db.query('subscribers').collect())).toHaveLength(1);
+  });
+
+  it.each(['unsubscribe', 'opt-out', 'removed tile'])('cancels a retry after %s', async change => {
+    vi.stubEnv('BREVO_API_KEY', 'xkeysib-test');
+    const fetch = vi.fn(async () => new Response('{}', { status: 503 }));
+    vi.stubGlobal('fetch', fetch);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const t = convexTest(schema, modules), a = await owner(t);
+    await save(a, { tiles: [{ id: 'list', type: 'subscribe', title: 'News' }] });
+    const boxId = (await a.query(api.boxes.mine))._id;
+    await join(t, boxId, 'cat@example.com', 'visitor-test');
+    await run(t);
+    if (change === 'unsubscribe') await t.mutation(api.moderation.unsubscribe, { boxId, tileId: 'list', visitorKey: 'visitor-test' });
+    else await save(a, change === 'opt-out' ? { notifySubscribers: false } : { tiles: [] }, 1);
+    vi.advanceTimersByTime(30_000);
+    await run(t);
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([400, 401])('does not retry a permanent Brevo error (%s)', async status => {
+    vi.stubEnv('BREVO_API_KEY', 'xkeysib-test');
+    const fetch = vi.fn(async () => new Response('{}', { status }));
+    vi.stubGlobal('fetch', fetch);
+    const t = convexTest(schema, modules), a = await owner(t);
+    await save(a, { tiles: [{ id: 'list', type: 'subscribe', title: 'News' }] });
+    const boxId = (await a.query(api.boxes.mine))._id;
+    await t.run(ctx => ctx.db.insert('subscribers', { boxId, tileId: 'list', email: 'cat@example.com', visitorKey: 'visitor-test' }));
+    const sub = await t.run(ctx => ctx.db.query('subscribers').first());
+    await expect(t.action(internal.notify.newSubscriber, { subscriberId: sub._id })).rejects.toThrow(`HTTP ${status}`);
+    expect(await t.run(ctx => ctx.db.system.query('_scheduled_functions').collect())).toHaveLength(0);
+  });
+
+  it('treats a Brevo duplicate response as an already accepted email', async () => {
+    vi.stubEnv('BREVO_API_KEY', 'xkeysib-test');
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ code: 'duplicate_parameter' }), { status: 400 }));
+    vi.stubGlobal('fetch', fetch);
+    const t = convexTest(schema, modules), a = await owner(t);
+    await save(a, { tiles: [{ id: 'list', type: 'subscribe', title: 'News' }] });
+    await join(t, (await a.query(api.boxes.mine))._id, 'cat@example.com');
+    await run(t);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect((await t.run(ctx => ctx.db.system.query('_scheduled_functions').collect())).every(job => job.state.kind === 'success')).toBe(true);
+  });
+
+  it('stops after three retries and records the exhausted notification as failed', async () => {
+    vi.stubEnv('BREVO_API_KEY', 'xkeysib-test');
+    const fetch = vi.fn(async () => new Response('{}', { status: 503 }));
+    vi.stubGlobal('fetch', fetch);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const t = convexTest(schema, modules), a = await owner(t);
+    await save(a, { tiles: [{ id: 'list', type: 'subscribe', title: 'News' }] });
+    await join(t, (await a.query(api.boxes.mine))._id, 'cat@example.com');
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(new Set(sent(fetch).map(mail => mail.headers.idempotencyKey)).size).toBe(1);
+    const jobs = await t.run(ctx => ctx.db.system.query('_scheduled_functions').collect());
+    expect(jobs.filter(job => job.state.kind === 'failed')).toHaveLength(1);
+  });
 });

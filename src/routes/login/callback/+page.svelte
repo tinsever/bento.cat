@@ -1,16 +1,19 @@
 <script>
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 	import { finishRedirect } from '#lib/signin.js';
+	import { loginUrl } from '#lib/login-return.js';
 	import { catLogo } from '#lib/engine/util.js';
 
 	let failed = $state(false);
 
 	// Google sends people back here; Clerk finishes the session and moves on to /login?step=after.
 	onMount(() => {
-		finishRedirect().catch(() => {
+		const open = page.url.searchParams.get('open');
+		finishRedirect(open).catch(() => {
 			failed = true;
-			setTimeout(() => goto('/login', { replaceState: true }), 2400);
+			setTimeout(() => goto(loginUrl(open), { replaceState: true }), 2400);
 		});
 	});
 </script>

@@ -5,6 +5,7 @@
 	import { PUBLIC_GOOGLE_SIGN_IN_ENABLED } from '$app/env/public';
 	import { mutation, reason } from '#lib/api.js';
 	import { auth, whenAuthed } from '#lib/auth.svelte.js';
+	import { editorUrl } from '#lib/login-return.js';
 	import { clerkMessage, resendCode, sendCode, verifyCode, withGoogle } from '#lib/signin.js';
 	import { Cat, I, catLogo, fmtSec, handleCheck, toast } from '#lib/engine/util.js';
 
@@ -67,7 +68,7 @@
 
 	async function google() {
 		busy = true;
-		try { await withGoogle(); } catch (x) { err = clerkMessage(x); busy = false; }
+		try { await withGoogle(page.url.searchParams.get('open')); } catch (x) { err = clerkMessage(x); busy = false; }
 	}
 
 	/* ---------- six digits ---------- */
@@ -176,7 +177,7 @@
 		doneTitle = title;
 		step = 'done';
 		Cat.mood('happy');
-		setTimeout(() => goto('/edit', { replaceState: true }), 900);
+		setTimeout(() => goto(editorUrl(page.url.searchParams.get('open')), { replaceState: true }), 900);
 	}
 
 	async function goPick(msg = '') {

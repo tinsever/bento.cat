@@ -8,6 +8,7 @@ import { internalAction, internalQuery } from './_generated/server';
 const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const line = s => String(s ?? '').replace(/\s+/g, ' ').trim();
 const FONT = `'Instrument Sans', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif`;
+const RETRY_DELAYS = [30_000, 120_000, 600_000];
 
 export function subscriberEmail({ email, title, handle, count, site = 'https://bento.cat' }) {
   site = site.replace(/\/+$/, '');
@@ -53,23 +54,45 @@ export const details = internalQuery({
 });
 
 export const newSubscriber = internalAction({
-  args: { subscriberId: v.id('subscribers') },
-  handler: async (ctx, { subscriberId }) => {
+  args: { subscriberId: v.id('subscribers'), attempt: v.optional(v.number()), idempotencyKey: v.optional(v.string()) },
+  handler: async (ctx, { subscriberId, attempt = 0, idempotencyKey = crypto.randomUUID() }) => {
     const key = process.env.BREVO_API_KEY;
     if (!key) return;
     const info = await ctx.runQuery(internal.notify.details, { subscriberId });
     if (!info) return;
     const { subject, html, text } = subscriberEmail({ ...info, site: process.env.SITE_URL || undefined });
-    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
-      method: 'POST',
-      headers: { 'api-key': key, 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({
-        sender: { name: process.env.MAIL_FROM_NAME || 'bento.cat', email: process.env.MAIL_FROM || 'hello@bento.cat' },
-        to: [{ email: info.to }],
-        subject, htmlContent: html, textContent: text,
-        headers: { 'Idempotency-Key': `subscriber-${subscriberId}` },
-      }),
-    });
-    if (!response.ok) throw new Error(`Subscriber email returned HTTP ${response.status}: ${(await response.text()).slice(0, 200)}`);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+    let failure, retryable = true;
+    try {
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        signal: controller.signal,
+        headers: { 'api-key': key, 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({
+          sender: { name: process.env.MAIL_FROM_NAME || 'bento.cat', email: process.env.MAIL_FROM || 'hello@bento.cat' },
+          to: [{ email: info.to }],
+          subject, htmlContent: html, textContent: text,
+          headers: { idempotencyKey },
+        }),
+      });
+      if (response.ok) return;
+      // A lost response can mean the email was already accepted. Brevo's
+      // duplicate response confirms it and must not trigger another send.
+      const body = await response.json().catch(() => null);
+      if (response.status === 400 && body?.code === 'duplicate_parameter') return;
+      retryable = response.status === 429 || response.status >= 500;
+      failure = new Error(`Subscriber email returned HTTP ${response.status}.`);
+    } catch {
+      failure = new Error('Subscriber email request failed.');
+    } finally {
+      clearTimeout(timeout);
+    }
+    if (retryable && attempt < RETRY_DELAYS.length) {
+      await ctx.scheduler.runAfter(RETRY_DELAYS[attempt], internal.notify.newSubscriber, { subscriberId, attempt: attempt + 1, idempotencyKey });
+      console.warn(`Subscriber email will retry (attempt ${attempt + 1}): ${failure.message}`);
+      return;
+    }
+    throw failure;
   },
 });

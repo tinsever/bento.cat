@@ -1,4 +1,5 @@
 import { clerk } from './api.js';
+import { callbackUrl, loginUrl } from './login-return.js';
 
 // A Clerk error turned into something a person can act on.
 export function clerkMessage(err) {
@@ -44,21 +45,22 @@ export async function verifyCode(mode, code) {
   await c.setActive({ session: res.createdSessionId });
 }
 
-export async function withGoogle() {
+export async function withGoogle(open) {
   const c = await clerk();
   await c.client.signIn.authenticateWithRedirect({
     strategy: 'oauth_google',
-    redirectUrl: `${location.origin}/login/callback`,
-    redirectUrlComplete: `${location.origin}/login?step=after`,
+    redirectUrl: location.origin + callbackUrl(open),
+    redirectUrlComplete: location.origin + loginUrl(open, true),
   });
 }
 
-export async function finishRedirect() {
+export async function finishRedirect(open) {
   const c = await clerk();
+  const destination = loginUrl(open, true);
   await c.handleRedirectCallback({
-    signInFallbackRedirectUrl: '/login?step=after',
-    signUpFallbackRedirectUrl: '/login?step=after',
-    signInForceRedirectUrl: '/login?step=after',
-    signUpForceRedirectUrl: '/login?step=after',
+    signInFallbackRedirectUrl: destination,
+    signUpFallbackRedirectUrl: destination,
+    signInForceRedirectUrl: destination,
+    signUpForceRedirectUrl: destination,
   });
 }
