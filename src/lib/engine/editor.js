@@ -4,7 +4,7 @@ import { createSaveQueue, draftJournal } from '../save-queue.js';
 import { hasCoords, zoomOf } from './map.js';
 import { AVATAR_SHAPES, DAY, sz } from './data.js';
 import { ALL_POSES, POSES, TINTS, TYPES, bg, corner, num, paintRange, serviceOf, sizeOf, tilesFor, tintOf, titleOf } from './tiles.js';
-import { $, $$, Cat, I, Pop, applyMarks, catLogo, clamp, esc, fmtHour, fmtSec, h, handleCheck, hash, hostOf, htmlText, looksLikeUrl, normUrl, pickFiles, platformOf, plural, poseForRatio, sanitize, toast, tzOffset, uid } from './util.js';
+import { $, $$, Cat, I, Pop, applyMarks, catLogo, clamp, esc, fmtHour, fmtSec, h, handleCheck, hash, hostOf, htmlText, looksLikeUrl, normUrl, pickFiles, platformOf, plural, poseForRatio, relTime, sanitize, toast, tzOffset, uid } from './util.js';
 
 /* The editor. Edit right on the page; controls appear beside the thing you touch. */
 
@@ -97,6 +97,7 @@ export function EditorView(app, box, opts = {}) {
       <div class="ed-head-r">
         <div class="save idle" id="save"></div>
         <button class="ed-link" data-ed="visits">Visits</button>
+        <button class="ed-link" data-ed="subs">Subscribers</button>
         <a class="btn btn-line" id="edPreview">Preview ↗</a>
         <button class="btn btn-dark" data-ed="share">Share your box</button>
         <button class="ed-me" data-ed="menu" id="edMe" aria-label="Your account"></button>
@@ -202,7 +203,7 @@ export function EditorView(app, box, opts = {}) {
   const payload = () => JSON.parse(JSON.stringify({
     name: box.name, bio: box.bio, avatar: box.avatar ?? null, avatarVideo: box.avatarVideo ?? null, avatarPos: box.avatarPos, avatarShape: box.avatarShape,
     tiles: box.tiles, mobile: box.mobile ? orderIdsOf(box, 'm') : undefined, suggestions: box.suggestions || [], onboarding: !!box.onboarding, shared: !!box.shared,
-    showInExplore: box.showInExplore !== false, shareVisits: box.shareVisits !== false,
+    showInExplore: box.showInExplore !== false, shareVisits: box.shareVisits !== false, notifySubscribers: box.notifySubscribers !== false,
   }));
 
   function save(o) {
@@ -1182,6 +1183,7 @@ export function EditorView(app, box, opts = {}) {
       { icon: I.mail(), title: 'Add a subscribe box', sub: 'Collect emails for your newsletter', words: 'subscribe newsletter email list react', run: () => add('subscribe', index) },
       { icon: I.arrow('#161616', 16), title: 'Share your box', sub: `bento.cat/${box.handle}`, words: 'share copy link tweet', run: () => openShare($('[data-ed="share"]', app)) },
       { icon: I.search(), title: 'See your visits', sub: 'Who came by, and when', words: 'visits stats views analytics', run: () => openVisits() },
+      { icon: I.mail(), title: 'See your subscribers', sub: 'Everyone on your lists', words: 'subscribers newsletter email list export csv', run: () => openSubscribers() },
       { icon: I.section(), title: 'Page settings', sub: 'Your address, discovery, your data', words: 'settings address handle rename explore discovery visibility export delete', run: () => openSettings($('#bSettings', app)) },
     ];
     for (const it of pool) if (!ql || ql.split(/\s+/).every(w => (it.title + ' ' + it.words).toLowerCase().includes(w))) out.push(it);
@@ -1435,6 +1437,129 @@ export function EditorView(app, box, opts = {}) {
     Cat.flash('wide', 1800);
   }
 
+  // Everyone on the box's lists, live, one card per subscribe tile.
+  function openSubscribers() {
+    const wrap = h(`<div class="drawer-wrap subs"><aside class="drawer" role="dialog" aria-label="Subscribers"><div class="dr-head"><b>Subscribers</b><button class="dr-x" aria-label="Close">${I.close('#161616', 12)}</button></div>
+      <section class="dr-empty dr-loading">${catLogo(48, { live: true })}<span>Counting the list…</span></section></aside></div>`);
+    $('#layer').append(wrap);
+    requestAnimationFrame(() => wrap.classList.add('in'));
+    const drawer = wrap.querySelector('.drawer');
+    const head = drawer.querySelector('.dr-head').outerHTML;
+    // People who joined since the drawer was last opened get a honey dot.
+    const seenKey = `bento:subs-seen:${box._id}`;
+    let seen = Date.now() - 7 * DAY;
+    try { seen = Number(local?.getItem(seenKey)) || seen; local?.setItem(seenKey, String(Date.now())); } catch { /* storage unavailable */ }
+    const open = new Set();
+    let lists = null;
+
+    const joined = ts => {
+      const d = new Date(ts), now = new Date();
+      if (Date.now() - ts < DAY) return relTime(ts);
+      const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+      if (ts >= startToday - DAY) return 'Yesterday';
+      return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(d.getFullYear() !== now.getFullYear() && { year: 'numeric' }) });
+    };
+    const row = p => `<div class="subs-row" data-id="${esc(p._id)}"><span class="subs-new">${p._creationTime > seen ? '<i></i>' : ''}</span><span class="subs-email">${esc(p.email)}</span><span class="subs-when" title="${esc(new Date(p._creationTime).toLocaleString('en-GB'))}">${esc(joined(p._creationTime))}</span><button class="subs-x" data-s="remove" aria-label="Remove ${esc(p.email)}">${I.close('currentColor', 10)}<span>Remove</span></button></div>`;
+    const card = l => {
+      const n = l.people.length, all = open.has(l.tileId) || n <= 6;
+      return `<section class="subs-list" data-tile="${esc(l.tileId)}">
+        <div class="subs-head"><div><b>${esc(l.title.trim() || 'Your list')}</b><span>${n ? `${plural(n, 'person', 'people')}, newest first` : 'Nobody yet'}</span></div>
+          ${n ? `<div class="subs-acts"><button class="btn btn-line sm" data-s="copy">${I.copy()}<span>Copy emails</span></button><button class="btn btn-line sm" data-s="csv">${I.download('#161616', 14)}<span>CSV</span></button></div>` : ''}</div>
+        ${n ? `<div class="subs-rows">${(all ? l.people : l.people.slice(0, 5)).map(row).join('')}</div>${all ? '' : `<button class="subs-more" data-s="more">Show all ${n.toLocaleString('en-GB')}</button>`}`
+          : `<div class="subs-none"><span>Lists grow when people see them.</span><button class="btn btn-line sm" data-s="share">Share</button></div>`}
+      </section>`;
+    };
+    const paint = () => {
+      if (!wrap.isConnected) return;
+      if (!lists) {
+        drawer.innerHTML = head + `<section class="dr-empty">${catLogo(64, { live: true })}<b>Couldn’t load your subscribers.</b><span>Close this and try again in a moment.</span></section>`;
+        return;
+      }
+      if (!lists.length) {
+        drawer.innerHTML = head + `<section class="dr-empty">${catLogo(64, { mood: 'closed' })}<b>No list to join yet</b><span>Add a subscribe tile and visitors can leave their email for your newsletter.</span><button class="btn btn-dark" data-s="add">Add a subscribe tile</button></section>`;
+        return;
+      }
+      const people = lists.flatMap(l => l.people);
+      const week = people.filter(p => Date.now() - p._creationTime < 7 * DAY).length;
+      const focus = document.activeElement?.closest?.('.drawer') === drawer && document.activeElement.dataset.s;
+      const scroll = drawer.scrollTop;
+      drawer.innerHTML = head + `<section class="sniff subs-sum">
+          <div class="sniff-top"><span class="big tnum">${people.length.toLocaleString('en-GB')}</span><span>${people.length === 1 ? 'person on your lists' : 'people on your lists'}</span>${week ? `<span class="subs-week tnum">+${week} this week</span>` : ''}</div>
+          <label class="settings-toggle subs-notify"><span><b>Email me when someone joins</b><small>${box.email ? `A short note to ${esc(box.email)}` : 'A short note to the email you sign in with'}</small></span>
+            <input type="checkbox" role="switch" data-s="notify" ${box.notifySubscribers !== false ? 'checked' : ''}></label>
+        </section>
+        ${lists.map(card).join('')}
+        <p class="t-meta subs-note">Write to people only about what they signed up for, and take anyone off who asks. Removing someone here takes them off the list for good.</p>`;
+      drawer.scrollTop = scroll;
+      if (focus) drawer.querySelector(`[data-s="${focus}"]`)?.focus();
+    };
+
+    const listOf = el => lists?.find(l => l.tileId === el.closest('[data-tile]')?.dataset.tile);
+    const csvCell = s => `"${(/^[=+\-@\t\r]/.test(s) ? `'${s}` : s).replace(/"/g, '""')}"`;
+    const fileName = l => `bento-${box.handle}-${(l.title.trim() || 'list').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'list'}.csv`;
+
+    wrap.addEventListener('click', e => {
+      if (e.target === wrap || e.target.closest('.dr-x')) return close();
+      const b = e.target.closest('[data-s]');
+      if (!b) return;
+      const l = listOf(b);
+      switch (b.dataset.s) {
+        case 'add': close(); add('subscribe', box.tiles.length); return;
+        case 'share': close(); openShare($('[data-ed="share"]', app)); return;
+        case 'more': open.add(l.tileId); paint(); return;
+        case 'copy': {
+          const label = b.querySelector('span');
+          (navigator.clipboard?.writeText(l.people.map(p => p.email).join(', ')) || Promise.reject())
+            .then(() => { label.textContent = 'Copied'; toast(`${plural(l.people.length, 'address', 'addresses')} copied.`, { mood: 'happy' }); })
+            .catch(() => { label.textContent = 'Copy failed'; });
+          setTimeout(() => { if (label.isConnected) label.textContent = 'Copy emails'; }, 2200);
+          return;
+        }
+        case 'csv': {
+          const csv = 'email,joined\n' + l.people.map(p => `${csvCell(p.email)},${new Date(p._creationTime).toISOString()}`).join('\n') + '\n';
+          const a = document.createElement('a');
+          a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+          a.download = fileName(l);
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+          return;
+        }
+        case 'remove': {
+          const r = b.closest('.subs-row');
+          // First click asks, second click removes.
+          if (!r.classList.contains('ask')) {
+            $$('.subs-row.ask', drawer).forEach(x => x.classList.remove('ask'));
+            r.classList.add('ask');
+            return;
+          }
+          r.classList.add('going');
+          mutation('moderation:removeSubscriber', { id: r.dataset.id })
+            .catch(err => { r.classList.remove('going', 'ask'); toast(esc(reason(err))); });
+          return;
+        }
+      }
+    });
+    wrap.addEventListener('change', e => {
+      if (e.target.dataset.s !== 'notify') return;
+      commit(b => { b.notifySubscribers = e.target.checked; }, { animate: false });
+      toast(e.target.checked ? 'We’ll email you when someone joins.' : 'No more emails about new subscribers.');
+    });
+    wrap.addEventListener('mouseleave', e => { if (e.target.classList?.contains('subs-row')) e.target.classList.remove('ask'); }, true);
+
+    const stop = watch('moderation:lists', {}, data => { lists = data; paint(); }, () => { lists = null; paint(); });
+    const key = e => { if (e.key === 'Escape') close(); };
+    addEventListener('keydown', key);
+    S.subsClose?.();
+    S.subsClose = close;
+    function close() {
+      if (S.subsClose === close) S.subsClose = null;
+      stop();
+      removeEventListener('keydown', key);
+      wrap.classList.remove('in');
+      setTimeout(() => wrap.remove(), 280);
+    }
+  }
+
   function openSettings(anchor) {
     const pop = Pop.open(`<div class="settings">
       <label class="fld"><span>Your address</span>
@@ -1560,6 +1685,8 @@ export function EditorView(app, box, opts = {}) {
       <div class="menu-who"><b>${esc(box.name || 'You')}</b><span>${esc(box.email || 'bento.cat/' + box.handle)}</span></div>
       <a class="menu-i" href="/${esc(box.handle)}">View your box</a>
       <button class="menu-i" data-m="settings">Page settings</button>
+      <button class="menu-i" data-m="visits">Visits</button>
+      <button class="menu-i" data-m="subs">Subscribers</button>
       ${box.onboarding && S.clHidden ? '<button class="menu-i" data-m="checklist">Show the checklist</button>' : ''}
       <a class="menu-i" href="/explore">Explore boxes</a>
       <hr>
@@ -1570,6 +1697,8 @@ export function EditorView(app, box, opts = {}) {
       if (e.target.closest('a')) { Pop.close(); return; }
       if (!b) return;
       if (b.dataset.m === 'settings') { Pop.close(); openSettings($('#edMe', app)); }
+      if (b.dataset.m === 'visits') { Pop.close(); openVisits(); }
+      if (b.dataset.m === 'subs') { Pop.close(); openSubscribers(); }
       if (b.dataset.m === 'checklist') { Pop.close(); S.clHidden = false; syncChecklist(); }
       if (b.dataset.m === 'logout') {
         Pop.close();
@@ -1638,6 +1767,7 @@ export function EditorView(app, box, opts = {}) {
         case 'redo': return redo();
         case 'share': return openShare(b);
         case 'visits': return openVisits();
+        case 'subs': return openSubscribers();
         case 'settings': return openSettings(b);
         case 'menu': return openMenu(b);
       }
@@ -1759,6 +1889,7 @@ export function EditorView(app, box, opts = {}) {
   saves.resume();
   for (const t of box.tiles) if (t.loading) unfurl(t.id);
   if (box.onboarding && !box.tiles.length && !box.name) setTimeout(() => focusTile('__bio'), 300);
+  if (opts.open === 'subscribers') openSubscribers();
 
   return () => {
     alive = false;
@@ -1767,6 +1898,7 @@ export function EditorView(app, box, opts = {}) {
     saves.dispose();
     if (saves.pending) void flush();
     stopVisits();
+    S.subsClose?.();
     removeEventListener('beforeunload', onLeave);
     document.removeEventListener('visibilitychange', onHidden);
     removeEventListener('keydown', onKey);

@@ -71,6 +71,8 @@ export default defineSchema({
     ghCheckedAt: v.optional(v.number()),
     // false once the owner turns off showing their box to the boxes they visit.
     shareVisits: v.optional(v.boolean()),
+    // false once the owner turns off the email about each new subscriber.
+    notifySubscribers: v.optional(v.boolean()),
   })
     .index('by_handle', ['handle'])
     .index('by_owner', ['ownerId'])

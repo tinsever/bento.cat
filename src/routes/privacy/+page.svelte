@@ -33,7 +33,7 @@
 		<li><b>Visits by people with a box.</b> If you’re signed in and have a box of your own, we record that your box visited and when, at most once every half hour per box. For 30 days the owner can see your box’s name, address and picture among the people who came by. Turn off “Show my box when I visit” in your page settings to stop this; it also deletes the visits already recorded for your box. If you aren’t signed in, or have no box, we add only to the anonymous counts.</li>
 		<li><b>Purrs.</b> We store your visitor key against the tile, so each visitor purrs once.</li>
 		<li><b>Guestbook scribbles.</b> We store your drawing, the name you give and your visitor key. Scribbles are shown to everyone who visits the box.</li>
-		<li><b>Joining a list.</b> If you leave your email on a box’s “subscribe” tile, we store it with your visitor key and show it only to that box’s owner, who can download it. The owner decides what to send you; ask them, or us, to take you off.</li>
+		<li><b>Joining a list.</b> If you leave your email on a box’s “subscribe” tile, we store it with your visitor key and show it only to that box’s owner, who can download it. The owner may get an email from us with your address when you join. The owner decides what to send you; ask them, or us, to take you off.</li>
 	</ul>
 	<p>Anonymous totals do not identify visitors. The request needed to serve the page is processed under our legitimate interest in running and understanding the use of the service (Art. 6 (1) (f) GDPR). Legal basis for visits by people with a box: our legitimate interest, and that of the box owners, in seeing which members of the community stop by, which you can object to at any time with the setting above (Art. 6 (1) (f) and Art. 21 GDPR). For interactions: providing the features you choose to use (Art. 6 (1) (b) GDPR).</p>
 
@@ -59,6 +59,7 @@
 	<ul>
 		<li><b>Clerk, Inc.</b> (USA): sign-in and account management.</li>
 		<li><b>Convex, Inc.</b> (USA): database, file storage and server functions.</li>
+		<li><b>Sendinblue SAS</b>, trading as Brevo (France): sends box owners an email when someone joins their list.</li>
 		<li><b>Henrik Kramer e.K.</b>, trading as Prepaid-Hoster.de (Germany): hosts the website on servers in Frankfurt am Main.</li>
 		<li><b>Google</b>: only if you choose “Continue with Google”.</li>
 		<li><b>OpenFreeMap</b>: map pictures, loaded by your browser when a box shows a map.</li>

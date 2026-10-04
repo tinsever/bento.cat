@@ -347,3 +347,74 @@ describe('moderation and retention', () => {
     expect((await t.run(ctx => ctx.db.query('views').first())).count).toBe(2);
   });
 });
+
+describe('subscriber emails', () => {
+  const join = (t, boxId, email, visitorKey = `key-${email}`) => t.mutation(api.interactions.subscribe, { boxId, tileId: 'list', email, visitorKey });
+  const run = async t => { vi.advanceTimersByTime(0); await t.finishInProgressScheduledFunctions(); };
+  const sent = fetch => fetch.mock.calls.map(([, init]) => JSON.parse(init.body));
+
+  it('emails the owner once per new address, and not after they turn it off', async () => {
+    vi.stubEnv('BREVO_API_KEY', 'xkeysib-test');
+    const fetch = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    const t = convexTest(schema, modules), a = await owner(t);
+    await save(a, { tiles: [{ id: 'list', type: 'subscribe', title: 'Kerning <Notes>' }] });
+    const { _id: boxId } = await a.query(api.boxes.mine);
+
+    await join(t, boxId, 'Mia@Example.com ');
+    await run(t);
+    const [mail] = sent(fetch);
+    expect(fetch.mock.calls[0][0]).toBe('https://api.brevo.com/v3/smtp/email');
+    expect(mail).toMatchObject({ sender: { email: 'hello@bento.cat' }, to: [{ email: 'user_owner@example.com' }], subject: 'New on Kerning <Notes>: mia@example.com' });
+    expect(mail.htmlContent).toContain('Someone joined Kerning &lt;Notes&gt;');
+    expect(mail.htmlContent).toContain('https://bento.cat/edit?open=subscribers');
+    expect(mail.textContent).toContain('first one on the list');
+
+    // The same address again is not a new subscriber.
+    await join(t, boxId, 'mia@example.com', 'another-key');
+    await run(t);
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    await join(t, boxId, 'jonas@example.com');
+    await run(t);
+    expect(sent(fetch)[1].textContent).toContain('That makes 2 people on the list.');
+
+    await save(a, { notifySubscribers: false }, 1);
+    expect((await a.query(api.boxes.mine)).notifySubscribers).toBe(false);
+    await join(t, boxId, 'ana@example.com');
+    await run(t);
+    expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('sends nothing without a Brevo key, and caps a flood', async () => {
+    const fetch = vi.fn(async () => new Response('{}', { status: 200 }));
+    vi.stubGlobal('fetch', fetch);
+    const t = convexTest(schema, modules), a = await owner(t);
+    await save(a, { tiles: [{ id: 'list', type: 'subscribe', title: 'News' }] });
+    const { _id: boxId } = await a.query(api.boxes.mine);
+    await join(t, boxId, 'one@example.com');
+    await run(t);
+    expect(fetch).not.toHaveBeenCalled();
+
+    vi.stubEnv('BREVO_API_KEY', 'xkeysib-test');
+    for (let i = 0; i < 25; i++) await join(t, boxId, `cat${i}@example.com`);
+    await run(t);
+    expect(fetch).toHaveBeenCalledTimes(19);
+  });
+
+  it('lists people per tile, newest first, for the owner only', async () => {
+    const t = convexTest(schema, modules), a = await owner(t), b = await owner(t, 'user_other');
+    await save(a, { tiles: [{ id: 'list', type: 'subscribe', title: 'News' }, { id: 'empty', type: 'subscribe', title: '' }] });
+    const { _id: boxId } = await a.query(api.boxes.mine);
+    await join(t, boxId, 'first@example.com');
+    vi.advanceTimersByTime(1000);
+    await join(t, boxId, 'second@example.com');
+    const lists = await a.query(api.moderation.lists);
+    expect(lists.map(l => [l.tileId, l.title, l.people.map(p => p.email)])).toEqual([
+      ['list', 'News', ['second@example.com', 'first@example.com']],
+      ['empty', '', []],
+    ]);
+    expect(lists[0].people[0]).not.toHaveProperty('visitorKey');
+    expect(await b.query(api.moderation.lists)).toEqual([]);
+  });
+});

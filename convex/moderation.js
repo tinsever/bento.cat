@@ -23,6 +23,20 @@ export const subscribers = query({
     return without(page, ({ _id, _creationTime, tileId, email }) => ({ _id, _creationTime, tileId, email }));
   },
 });
+// Each subscribe tile with its people, newest first, for the Subscribers drawer.
+export const lists = query({
+  args: {},
+  handler: async ctx => {
+    const { box } = await requireOwnBox(ctx);
+    const out = [];
+    for (const t of box.tiles.filter(t => t.type === 'subscribe')) {
+      const rows = await ctx.db.query('subscribers').withIndex('by_box_tile_email', q => q.eq('boxId', box._id).eq('tileId', t.id)).take(10000);
+      rows.sort((a, b) => b._creationTime - a._creationTime);
+      out.push({ tileId: t.id, title: t.title ?? '', people: rows.map(({ _id, _creationTime, email }) => ({ _id, _creationTime, email })) });
+    }
+    return out;
+  },
+});
 async function remove(ctx, table, id) {
   const { box } = await requireOwnBox(ctx);
   const row = await ctx.db.get(id);

@@ -2,7 +2,7 @@ import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import { internalMutation, mutation } from './_generated/server';
 import { boxOfUser, currentUser } from './lib';
-import { limit } from './limits';
+import { allow, limit } from './limits';
 import { GH_STALE } from './links';
 import { VISIT_RETENTION } from './retention';
 
@@ -72,13 +72,17 @@ export const scribble = mutation({
 export const subscribe = mutation({
   args: { boxId: v.id('boxes'), tileId: v.string(), email: v.string(), visitorKey: v.string() },
   handler: async (ctx, { boxId, tileId, email, visitorKey }) => {
-    await tileOf(ctx, boxId, tileId, 'subscribe');
+    const { box } = await tileOf(ctx, boxId, tileId, 'subscribe');
     const e = email.trim().toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) || e.length > 200) throw new ConvexError('That email doesn’t look right.');
     await limit(ctx, `subscribe:${boxId}:${key(visitorKey)}`, 3, 60 * MIN);
     await limit(ctx, `subscribe:${boxId}`, 60, 10 * MIN);
     const existing = await ctx.db.query('subscribers').withIndex('by_box_tile_email', q => q.eq('boxId', boxId).eq('tileId', tileId).eq('email', e)).unique();
-    if (!existing) await ctx.db.insert('subscribers', { boxId, tileId, email: e, visitorKey: key(visitorKey) });
+    if (existing) return;
+    const subscriberId = await ctx.db.insert('subscribers', { boxId, tileId, email: e, visitorKey: key(visitorKey) });
+    // A note to the owner for each new address, within a budget so a flood can't fill their inbox.
+    if (box.notifySubscribers !== false && await allow(ctx, `notify:${boxId}`, 20, 60 * MIN))
+      await ctx.scheduler.runAfter(0, internal.notify.newSubscriber, { subscriberId });
   },
 });
 

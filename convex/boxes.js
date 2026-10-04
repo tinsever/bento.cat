@@ -76,6 +76,7 @@ export const mine = query({
       shared: !!box.shared,
       showInExplore: box.showInExplore !== false,
       shareVisits: box.shareVisits !== false,
+      notifySubscribers: box.notifySubscribers !== false,
       suggestions: box.suggestions ?? [],
       revision: box.revision ?? 0,
       lastSaveId: box.lastSaveId ?? null,

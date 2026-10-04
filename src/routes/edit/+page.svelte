@@ -1,6 +1,6 @@
 <script>
 	import { onMount } from 'svelte';
-	import { goto } from '$app/navigation';
+	import { goto, replaceState } from '$app/navigation';
 	import { query } from '#lib/api.js';
 	import { whenAuthed } from '#lib/auth.svelte.js';
 	import { EditorView } from '#lib/engine/editor.js';
@@ -20,7 +20,10 @@
 			if (!box) { state = 'error'; return; }
 			state = 'ready';
 			// The editor owns this subtree; Svelte only hands it a node.
-			dispose = EditorView(host, box);
+			// ?open=subscribers comes from the email about a new subscriber.
+			const open = new URL(location.href).searchParams.get('open');
+			if (open) replaceState('/edit', {});
+			dispose = EditorView(host, box, { open });
 		});
 		return () => { gone = true; dispose?.(); };
 	});

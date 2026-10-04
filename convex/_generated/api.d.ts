@@ -21,6 +21,7 @@ import type * as links from "../links.js";
 import type * as media from "../media.js";
 import type * as mediaPolicy from "../mediaPolicy.js";
 import type * as moderation from "../moderation.js";
+import type * as notify from "../notify.js";
 import type * as retention from "../retention.js";
 import type * as seed from "../seed.js";
 import type * as stats from "../stats.js";
@@ -46,6 +47,7 @@ declare const fullApi: ApiFromModules<{
   media: typeof media;
   mediaPolicy: typeof mediaPolicy;
   moderation: typeof moderation;
+  notify: typeof notify;
   retention: typeof retention;
   seed: typeof seed;
   stats: typeof stats;

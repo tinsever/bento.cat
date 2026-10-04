@@ -20,7 +20,7 @@ In Clerk, enable email codes and Google sign-in and create the `convex` JWT temp
 bunx convex env set CLERK_JWT_ISSUER_DOMAIN https://YOUR_CLERK_FRONTEND_API
 ```
 
-See [.env.example](.env.example) for other settings, including account deletion credentials and the Clerk webhook.
+See [.env.example](.env.example) for other settings, including account deletion credentials, the Clerk webhook, and the Brevo key that emails owners about new subscribers.
 
 In another terminal:
 
