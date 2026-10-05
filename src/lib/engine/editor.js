@@ -1,7 +1,7 @@
 import { action, clerk, mutation, posterOf, query, reason, upload, watch } from '../api.js';
 import { Box } from './box.js';
 import { createSaveQueue, draftJournal } from '../save-queue.js';
-import { mergePreview } from '../link-previews.js';
+import { mergePreview, previewSource } from '../link-previews.js';
 import { hasCoords, zoomOf } from './map.js';
 import { AVATAR_SHAPES, DAY, sz } from './data.js';
 import { ALL_POSES, POSES, TINTS, TYPES, bg, corner, num, paintRange, serviceOf, sizeOf, tilesFor, tintOf, titleOf } from './tiles.js';
@@ -938,6 +938,7 @@ export function EditorView(app, box, opts = {}) {
     const before = JSON.stringify(box);
     const x = t;
     const current = JSON.parse(JSON.stringify(t));
+    const prior = baseline || original.previewSource?.values || original;
     delete x.loading;
     if (res) {
       const untouched = JSON.stringify(x.size) === firstSize;
@@ -945,20 +946,26 @@ export function EditorView(app, box, opts = {}) {
       if (refresh && res.previewSource && res.type === x.type) {
         // Preserve edits made while the request was in flight. The URL changed,
         // so these original fields are only a baseline for this one response.
-        Object.assign(x, mergePreview({ ...x, url: res.url, previewSource: { ...res.previewSource, fetchedAt: 0, values: baseline || original.previewSource?.values || original } }, { url: res.url, type: x.type, data: res.previewSource }));
+        Object.assign(x, mergePreview({ ...x, url: res.url, previewSource: { ...res.previewSource, fetchedAt: 0, values: prior } }, { url: res.url, type: x.type, data: res.previewSource }));
       } else {
         for (const k of ['title', 'sub', 'cover', 'src', 'pos', 'meta', 'preview', 'icon', 'user', 'levels', 'counts', 'start', 'total', 'fetchedAt', 'previewSource']) delete x[k];
         Object.assign(x, res);
         // A title typed while a newly added tile was loading belongs to its owner.
-        if ((current.title !== original.title || (refresh && current.title !== baseline?.title)) && current.title) x.title = current.title;
+        if ((current.title !== original.title || (refresh && current.title !== prior.title)) && current.title) x.title = current.title;
         if (refresh) {
           x.pos = current.pos || '50% 50%';
-          for (const key of ['src', 'cover', 'preview']) if (current[key] && JSON.stringify(current[key]) !== JSON.stringify(baseline?.[key])) x[key] = current[key];
+          for (const key of ['src', 'cover', 'preview']) if (current[key] && JSON.stringify(current[key]) !== JSON.stringify(prior[key])) x[key] = current[key];
         }
       }
       if (!refresh && untouched && res.type === 'link' && res.preview && sizeOf(x, 'd') === 'curl') x.size = sz('loaf');
       // Each layout only gives up a pose the new type can't take.
       for (const dv of ['d', 'm']) if (!poses.includes(sizeOf(x, dv))) x.size = { ...x.size, [dv]: res.type === 'link' ? 'curl' : 'loaf' };
+    } else if (refresh) {
+      // A failed replacement URL must not advertise the old destination. Keep
+      // custom fields, but clear the old automatic preview until a retry works.
+      const empty = previewSource({ ...prior, url: x.url, type: x.type }, 0);
+      for (const key of Object.keys(empty.values)) empty.values[key] = null;
+      Object.assign(x, mergePreview({ ...x, previewSource: { ...empty, values: prior } }, { url: x.url, type: x.type, data: empty }));
     }
     commit(() => {}, { before });
   }

@@ -133,7 +133,11 @@ function readHead(html, base) {
 async function keep(ctx, raw, boxId) {
   const r = await get(raw, { max: IMAGE_MAX, accept: 'image/avif,image/webp,image/png,image/jpeg,image/gif,image/x-icon,image/*' });
   if (!r || !/^image\/(png|jpe?g|gif|webp|avif|x-icon|vnd\.microsoft\.icon)/.test(r.type) || r.bytes.length < 64) return null;
-  return await storePreview(ctx, new Blob([r.bytes], { type: r.type.split(';')[0] }), boxId);
+  try {
+    return await storePreview(ctx, new Blob([r.bytes], { type: r.type.split(';')[0] }), boxId);
+  } catch {
+    return null;
+  }
 }
 
 async function keepIcon(ctx, candidates, boxId) {

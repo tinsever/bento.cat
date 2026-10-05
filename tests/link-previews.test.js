@@ -118,6 +118,27 @@ describe('automatic link previews', () => {
     expect((await view(t)).tiles[0].preview).not.toEqual(tile.preview);
   });
 
+  it('updates metadata and keeps working images when the upload quota is exhausted', async () => {
+    const { t, a, tile, boxId } = await setup();
+    vi.advanceTimersByTime(PREVIEW_STALE);
+    await t.run(async ctx => {
+      const { ownerId } = await ctx.db.get(boxId);
+      const quota = await ctx.db.query('limits').withIndex('by_key', q => q.eq('key', `upload:${ownerId}`)).unique();
+      await ctx.db.patch(quota._id, { windowStart: Date.now(), count: 120 });
+    });
+    mockSite({ title: 'Updated title', cover: 'new-cover', icon: 'new-icon' });
+    await refresh(t, boxId);
+    expect((await view(t)).tiles[0]).toMatchObject({ title: 'Updated title', preview: tile.preview, icon: tile.icon });
+    expect((await t.run(ctx => ctx.db.get(boxId))).linkPreviews[0].incomplete).toBe(true);
+    expect(await uploads(t)).toHaveLength(2);
+    const imported = await a.action(api.links.unfurl, { url: URL });
+    expect(imported).toMatchObject({ title: 'Updated title', preview: null, icon: null });
+    vi.advanceTimersByTime(PREVIEW_RETRY);
+    await refresh(t, boxId);
+    expect((await view(t)).tiles[0].preview).not.toEqual(tile.preview);
+    expect((await t.run(ctx => ctx.db.get(boxId))).linkPreviews[0].incomplete).toBe(false);
+  });
+
   it.each(['link', 'music', 'video'])('clears an automatic %s image when successful metadata removes it', async type => {
     const url = type === 'music' ? 'https://open.spotify.com/playlist/cats' : type === 'video' ? 'https://www.youtube.com/watch?v=cat' : URL;
     const field = type === 'music' ? 'cover' : type === 'video' ? 'src' : 'preview';
