@@ -224,6 +224,24 @@ describe('automatic link previews', () => {
     expect((await uploads(t)).every(file => file.referenced)).toBe(true);
   });
 
+  it('reserves reused unreferenced images before their old cleanup deadline', async () => {
+    const { t, a, tile, save } = await setup();
+    await save([]);
+    vi.advanceTimersByTime(UNUSED_FILE_TTL - 1);
+    const reused = await a.action(api.links.unfurl, { url: URL });
+    expect(reused.icon).toEqual(tile.icon);
+    expect(reused.preview).toEqual(tile.preview);
+    expect((await uploads(t)).every(file => file.expiresAt === Date.now() + UNUSED_FILE_TTL)).toBe(true);
+    vi.advanceTimersByTime(1);
+    await t.finishInProgressScheduledFunctions();
+    expect(await uploads(t)).toHaveLength(2);
+    await save([{ id: tile.id, ...reused }], 2);
+    vi.advanceTimersByTime(UNUSED_FILE_TTL);
+    await t.finishInProgressScheduledFunctions();
+    expect((await uploads(t)).every(file => file.referenced)).toBe(true);
+    expect((await view(t)).tiles[0].icon).toEqual(tile.icon);
+  });
+
   it.each(['removed', 'changed URL', 'changed type'])('ignores a delayed result after a tile is %s', async change => {
     const { t, tile, boxId, save } = await setup();
     vi.advanceTimersByTime(PREVIEW_STALE);

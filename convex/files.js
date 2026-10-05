@@ -47,7 +47,15 @@ export const reservePreview = internalMutation({
     const files = await ctx.db.query('uploads').withIndex('by_owner_digest', q => q.eq('ownerId', ownerId).eq('digest', digest)).collect();
     for (const file of files) if (file.storageId && await ctx.db.system.get(file.storageId)) {
       const url = await ctx.storage.getUrl(file.storageId);
-      if (url) return { url };
+      if (url) {
+        // Reserve time for the caller to attach a reused file before an older
+        // cleanup job can remove it. Abandoned imports still expire normally.
+        if (!file.referenced) {
+          await ctx.db.patch(file._id, { expiresAt: Date.now() + UNUSED_FILE_TTL });
+          await ctx.scheduler.runAfter(UNUSED_FILE_TTL, internal.files.cleanup, { uploadId: file._id });
+        }
+        return { url };
+      }
     }
     return { uploadId: await reserveOwned(ctx, ownerId, bytes, contentType, digest) };
   },
