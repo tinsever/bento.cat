@@ -45,6 +45,36 @@ beforeEach(() => { vi.useFakeTimers(); mockSite(); });
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('automatic link previews', () => {
+  it.each(['link', 'music', 'video'])('replaces automatic text after a failed first %s import recovers', async type => {
+    const original = { id: 'tile', type, url: URL, title: type === 'link' ? 'Example' : '', sub: '', meta: '' };
+    const { t, boxId } = await setup({ ...original, previewSource: previewSource(original, 0) });
+    if (type === 'link') mockSite({ title: 'Recovered title' });
+    else {
+      const url = type === 'music' ? 'https://open.spotify.com/playlist/cats' : 'https://www.youtube.com/watch?v=cat';
+      await t.run(async ctx => {
+        await ctx.db.patch(boxId, { tiles: [{ ...original, url, previewSource: previewSource({ ...original, url }, 0) }] });
+      });
+      vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ title: 'Recovered title' }), { headers: { 'content-type': 'application/json' } })));
+    }
+    await refresh(t, boxId);
+    expect((await view(t)).tiles[0].title).toBe('Recovered title');
+  });
+
+  it('keeps the refresh timestamp for a URL stored without its trailing slash', async () => {
+    const original = { id: 'tile', type: 'link', url: 'https://example.com', title: 'Original' };
+    const { t, a, boxId } = await setup({ ...original, previewSource: previewSource(original, 0) });
+    const fetch = vi.fn(async url => String(url) === 'https://example.com/' ? html('Updated') : image(String(url)));
+    vi.stubGlobal('fetch', fetch);
+    await refresh(t, boxId);
+    const fresh = (await a.query(api.boxes.mine)).tiles[0];
+    expect(fresh.previewSource.url).toBe(original.url);
+    expect(fresh.previewSource.fetchedAt).toBe(Date.now());
+    fetch.mockClear();
+    vi.advanceTimersByTime(PREVIEW_RETRY);
+    await refresh(t, boxId);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('serves the stored preview immediately and fetches only after 24 hours', async () => {
     const { t, a, boxId, tile } = await setup();
     const fetch = mockSite({ title: 'New title', cover: 'new-cover', icon: 'new-icon' });

@@ -8,7 +8,7 @@ export function hasLinkPreview(tile) {
 }
 
 export function previewSource(tile, fetchedAt = Date.now()) {
-  return { url: tile.url, type: tile.type, fetchedAt, values: Object.fromEntries(FIELDS.filter(k => k in tile && tile[k] !== undefined && tile[k] !== '').map(k => [k, tile[k]])) };
+  return { url: tile.url, type: tile.type, fetchedAt, values: Object.fromEntries(FIELDS.filter(k => k in tile && tile[k] !== undefined).map(k => [k, tile[k]])) };
 }
 
 // Older tiles have no record of their fetched title. Keep their wording, but

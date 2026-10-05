@@ -1,7 +1,7 @@
 import { action, clerk, mutation, posterOf, query, reason, upload, watch } from '../api.js';
 import { Box } from './box.js';
 import { createSaveQueue, draftJournal } from '../save-queue.js';
-import { mergePreview, previewSource } from '../link-previews.js';
+import { hasLinkPreview, mergePreview, previewSource } from '../link-previews.js';
 import { hasCoords, zoomOf } from './map.js';
 import { AVATAR_SHAPES, DAY, sz } from './data.js';
 import { ALL_POSES, POSES, TINTS, TYPES, bg, corner, num, paintRange, serviceOf, sizeOf, tilesFor, tintOf, titleOf } from './tiles.js';
@@ -77,6 +77,7 @@ export function guessLink(raw) {
 // and saves the whole thing back a moment after each change.
 export function EditorView(app, box, opts = {}) {
   const Fetching = new Set();
+  let pendingPreviews = null;
   const S = {
     device: innerWidth < 760 ? 'm' : 'd',
     sel: null, undo: [], redo: [], press: null, drag: null,
@@ -830,6 +831,7 @@ export function EditorView(app, box, opts = {}) {
     if (f && S.editing && S.editing.node === f) {
       const { field, key, before } = S.editing;
       S.editing = null;
+      if (pendingPreviews) queueMicrotask(() => { if (alive && pendingPreviews) applyCachedPreviews(pendingPreviews); });
       const val = field === 'html' ? applyMarks(sanitize(f.innerHTML)) : f.textContent.replace(/\s+/g, ' ').trim();
       const obj = key === '__bio' ? box : find(key);
       if (!obj) return;
@@ -966,6 +968,10 @@ export function EditorView(app, box, opts = {}) {
       const empty = previewSource({ ...prior, url: x.url, type: x.type }, 0);
       for (const key of Object.keys(empty.values)) empty.values[key] = null;
       Object.assign(x, mergePreview({ ...x, previewSource: { ...empty, values: prior } }, { url: x.url, type: x.type, data: empty }));
+    } else if (hasLinkPreview(x)) {
+      // Keep the original guess as the automatic baseline even if the first
+      // request fails, so a later retry can replace it without losing edits.
+      x.previewSource = previewSource(original, 0);
     }
     commit(() => {}, { before });
   }
@@ -1922,8 +1928,12 @@ export function EditorView(app, box, opts = {}) {
     lastVisit = at ?? 0;
   }, () => {});
 
-  const stopPreviews = watch('links:previews', { boxId: box._id }, cached => {
+  function applyCachedPreviews(cached) {
     if (!alive) return;
+    // Rendering replaces editable nodes. Apply the latest preview after typing
+    // has finished so focus, the caret, and unsaved text stay intact.
+    if (S.editing) { pendingPreviews = cached; return; }
+    pendingPreviews = null;
     let changed = false;
     box.tiles = box.tiles.map(tile => {
       const next = mergePreview(tile, cached.find(p => p.tileId === tile.id));
@@ -1931,7 +1941,8 @@ export function EditorView(app, box, opts = {}) {
       return next;
     });
     if (changed) render(false);
-  }, () => {});
+  }
+  const stopPreviews = watch('links:previews', { boxId: box._id }, applyCachedPreviews, () => {});
   mutation('interactions:refreshBox', { boxId: box._id }).catch(() => {});
 
   // Don't lose the last edit when the tab closes mid-save.

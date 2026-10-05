@@ -332,7 +332,7 @@ export const finishPreview = internalMutation({
       if (failedFields.includes('preview')) failedFields = [...failedFields, 'src'];
     }
     if (!data || data.type !== tile.type) return;
-    const fresh = previewSource(data);
+    const fresh = previewSource({ ...data, url });
     for (const key of failedFields) delete fresh.values[key];
     const source = { ...fresh, values: { ...(cached.data?.values || cached.base.values), ...fresh.values } };
     const linkPreviews = box.linkPreviews.map(p => p.tileId === tileId ? { ...p, data: source, incomplete: !!data.incomplete } : p);
