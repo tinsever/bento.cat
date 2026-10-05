@@ -26,12 +26,20 @@ export function mergePreview(tile, cached) {
   if (baseline.fetchedAt > cached.data.fetchedAt) return tile;
   const base = tile.previewSource?.url === tile.url ? baseline : cached.base;
   const next = { ...tile };
+  const source = { ...cached.data, values: { ...cached.data.values } };
   for (const key of FIELDS) {
     const value = cached.data.values[key];
-    if (!(key in cached.data.values) || value === '') continue;
+    if (!(key in cached.data.values)) continue;
+    if (value === '') {
+      // A skipped empty field must keep its old automatic baseline, otherwise
+      // the displayed value would look like a custom edit on the next refresh.
+      if (key in (base?.values || {})) source.values[key] = base.values[key];
+      else delete source.values[key];
+      continue;
+    }
     if (same(tile[key], base?.values[key]) || (tile[key] == null && base?.values[key] == null)) next[key] = value;
   }
-  next.previewSource = cached.data;
+  next.previewSource = source;
   return next;
 }
 

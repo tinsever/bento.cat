@@ -75,6 +75,21 @@ describe('automatic link previews', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it('recovers an automatic title after a refresh temporarily returns empty text', async () => {
+    const { t, a, boxId, tile, save } = await setup();
+    vi.advanceTimersByTime(PREVIEW_STALE);
+    mockSite({ title: '' });
+    await refresh(t, boxId);
+    const kept = (await a.query(api.boxes.mine)).tiles[0];
+    expect(kept.title).toBe(tile.title);
+    expect(kept.previewSource.values.title).toBe(tile.title);
+    await save([kept]);
+    vi.advanceTimersByTime(PREVIEW_STALE);
+    mockSite({ title: 'Recovered title' });
+    await refresh(t, boxId);
+    expect((await view(t)).tiles[0].title).toBe('Recovered title');
+  });
+
   it('serves the stored preview immediately and fetches only after 24 hours', async () => {
     const { t, a, boxId, tile } = await setup();
     const fetch = mockSite({ title: 'New title', cover: 'new-cover', icon: 'new-icon' });
