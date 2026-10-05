@@ -1,7 +1,7 @@
 import { action, clerk, mutation, posterOf, query, reason, upload, watch } from '../api.js';
 import { Box } from './box.js';
 import { createSaveQueue, draftJournal } from '../save-queue.js';
-import { hasLinkPreview, mergePreview, previewSource } from '../link-previews.js';
+import { hasLinkPreview, mergePreview, mergeReplacementPreview, previewSource } from '../link-previews.js';
 import { hasCoords, zoomOf } from './map.js';
 import { AVATAR_SHAPES, DAY, sz } from './data.js';
 import { ALL_POSES, POSES, TINTS, TYPES, bg, corner, num, paintRange, serviceOf, sizeOf, tilesFor, tintOf, titleOf } from './tiles.js';
@@ -948,7 +948,7 @@ export function EditorView(app, box, opts = {}) {
       if (refresh && res.previewSource && res.type === x.type) {
         // Preserve edits made while the request was in flight. The URL changed,
         // so these original fields are only a baseline for this one response.
-        Object.assign(x, mergePreview({ ...x, url: res.url, previewSource: { ...res.previewSource, fetchedAt: 0, values: prior } }, { url: res.url, type: x.type, data: res.previewSource }));
+        Object.assign(x, mergeReplacementPreview(x, res.previewSource, prior));
       } else {
         for (const k of ['title', 'sub', 'cover', 'src', 'pos', 'meta', 'preview', 'icon', 'user', 'levels', 'counts', 'start', 'total', 'fetchedAt', 'previewSource']) delete x[k];
         Object.assign(x, res);
@@ -965,9 +965,7 @@ export function EditorView(app, box, opts = {}) {
     } else if (refresh) {
       // A failed replacement URL must not advertise the old destination. Keep
       // custom fields, but clear the old automatic preview until a retry works.
-      const empty = previewSource({ ...prior, url: x.url, type: x.type }, 0);
-      for (const key of Object.keys(empty.values)) empty.values[key] = null;
-      Object.assign(x, mergePreview({ ...x, previewSource: { ...empty, values: prior } }, { url: x.url, type: x.type, data: empty }));
+      Object.assign(x, mergeReplacementPreview(x, previewSource({ url: x.url, type: x.type }, 0), prior));
     } else if (hasLinkPreview(x)) {
       // Keep the original guess as the automatic baseline even if the first
       // request fails, so a later retry can replace it without losing edits.

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vite-plus/test'
 import { convexTest } from 'convex-test';
 import schema from '../convex/schema.js';
 import { api, internal } from '../convex/_generated/api.js';
-import { PREVIEW_RETRY, PREVIEW_STALE, mergePreview, previewSource } from '../src/lib/link-previews.js';
+import { PREVIEW_RETRY, PREVIEW_STALE, mergePreview, mergeReplacementPreview, previewSource } from '../src/lib/link-previews.js';
 import { UNUSED_FILE_TTL, mediaUrls } from '../convex/mediaPolicy.js';
 
 const modules = import.meta.glob('../convex/**/*.js');
@@ -356,6 +356,43 @@ describe('playlist thumbnails and favicon discovery', () => {
 });
 
 describe('preview merging', () => {
+  it('clears failed automatic fields on a URL replacement and fills them on retry', () => {
+    const old = { type: 'link', url: URL, title: 'Old site', icon: { src: 'https://example.com/old.png' } };
+    const url = 'https://new.example.com/';
+    const source = previewSource({ type: 'link', url, title: 'New site' }, 0);
+    const next = mergeReplacementPreview({ ...old, url }, source, previewSource(old).values);
+    expect(next).toMatchObject({ title: 'New site', icon: null, previewSource: { values: { icon: null } } });
+    const data = previewSource({ type: 'link', url, title: 'New site', icon: { src: 'https://new.example.com/icon.png' } });
+    expect(mergePreview(next, { url, type: 'link', data }).icon).toEqual(data.values.icon);
+  });
+
+  it('keeps custom fields through a partially failed URL replacement and later retry', () => {
+    const old = { type: 'link', url: URL, title: 'Old site', icon: { src: 'https://example.com/old.png' } };
+    const url = 'https://new.example.com/';
+    const custom = { ...old, url, title: 'My title', icon: { src: 'https://example.com/upload.png' } };
+    const next = mergeReplacementPreview(custom, previewSource({ type: 'link', url, title: 'New site' }, 0), previewSource(old).values);
+    const data = previewSource({ type: 'link', url, title: 'New site', icon: { src: 'https://new.example.com/icon.png' } });
+    expect(mergePreview(next, { url, type: 'link', data })).toMatchObject({ title: custom.title, icon: custom.icon });
+  });
+
+  it('preserves an intentional image removal when a failed replacement and later retry recover', () => {
+    const old = { type: 'link', url: URL, title: 'Old site', preview: { kind: 'image', src: 'https://example.com/old.png' } };
+    const url = 'https://new.example.com/';
+    const next = mergeReplacementPreview({ ...old, url, preview: null }, previewSource({ type: 'link', url, title: 'New site' }, 0), previewSource(old).values);
+    const missing = previewSource({ type: 'link', url, title: 'New site', preview: null }, 1);
+    const kept = mergePreview(next, { url, type: 'link', data: missing });
+    const recovered = previewSource({ type: 'link', url, title: 'New site', preview: { kind: 'image', src: 'https://new.example.com/image.png' } }, 2);
+    expect(mergePreview(kept, { url, type: 'link', data: recovered }).preview).toBeNull();
+  });
+
+  it('clears the old automatic title when a replacement page returns empty text', () => {
+    const old = { type: 'link', url: URL, title: 'Old site' };
+    const url = 'https://new.example.com/';
+    const source = previewSource({ type: 'link', url, title: '' }, 0);
+    expect(mergeReplacementPreview({ ...old, url }, source, previewSource(old).values).title).toBeNull();
+    expect(mergeReplacementPreview({ ...old, url, title: 'My title' }, source, previewSource(old).values).title).toBe('My title');
+  });
+
   it('preserves custom text, uploaded media and intentional removals without changing type or crop', () => {
     const original = { id: 'video', type: 'video', url: PLAYLIST, title: 'Fetched title', src: 'https://example.com/old.png', pos: '20% 80%' };
     const tile = { ...original, title: 'My title', src: 'https://example.com/upload.png', previewSource: previewSource(original, 1) };
