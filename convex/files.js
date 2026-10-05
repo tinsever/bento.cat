@@ -5,41 +5,78 @@ import { requireOwnBox } from './lib';
 import { limit } from './limits';
 import { MAX_OWNER_BYTES, MAX_OWNER_FILES, UNUSED_FILE_TTL, mediaType, mediaUrls, uploadError } from './mediaPolicy';
 
+async function reserveOwned(ctx, ownerId, bytes, contentType, digest) {
+  const error = uploadError(bytes, contentType);
+  if (error) throw new ConvexError(error);
+  await limit(ctx, `upload:${ownerId}`, 120, 60 * 60 * 1000);
+  const files = await ctx.db.query('uploads').withIndex('by_owner', q => q.eq('ownerId', ownerId)).collect();
+  if (files.length >= MAX_OWNER_FILES || files.reduce((n, file) => n + file.bytes, 0) + bytes > MAX_OWNER_BYTES)
+    throw new ConvexError('Your box has reached its file storage limit. Remove some media and try again after cleanup.');
+  const uploadId = await ctx.db.insert('uploads', {
+    ownerId, bytes, contentType: mediaType(contentType), referenced: false,
+    ...(digest ? { digest } : {}), expiresAt: Date.now() + UNUSED_FILE_TTL,
+  });
+  await ctx.scheduler.runAfter(UNUSED_FILE_TTL, internal.files.cleanup, { uploadId });
+  return uploadId;
+}
+
 export const reserve = internalMutation({
   args: { bytes: v.number(), contentType: v.string() },
   handler: async (ctx, { bytes, contentType }) => {
     const { user } = await requireOwnBox(ctx);
-    const error = uploadError(bytes, contentType);
-    if (error) throw new ConvexError(error);
-    await limit(ctx, `upload:${user._id}`, 120, 60 * 60 * 1000);
-    const files = await ctx.db.query('uploads').withIndex('by_owner', q => q.eq('ownerId', user._id)).collect();
-    if (files.length >= MAX_OWNER_FILES || files.reduce((n, file) => n + file.bytes, 0) + bytes > MAX_OWNER_BYTES)
-      throw new ConvexError('Your box has reached its file storage limit. Remove some media and try again after cleanup.');
-    const uploadId = await ctx.db.insert('uploads', {
-      ownerId: user._id, bytes, contentType: mediaType(contentType), referenced: false,
-      expiresAt: Date.now() + UNUSED_FILE_TTL,
-    });
-    await ctx.scheduler.runAfter(UNUSED_FILE_TTL, internal.files.cleanup, { uploadId });
-    return uploadId;
+    return await reserveOwned(ctx, user._id, bytes, contentType);
   },
 });
+
+async function previewOwner(ctx, boxId) {
+  if (!boxId) return (await requireOwnBox(ctx)).user._id;
+  const box = await ctx.db.get(boxId);
+  if (!box?.ownerId || !(await ctx.db.get(box.ownerId))) throw new ConvexError('That box is no longer here.');
+  return box.ownerId;
+}
+
+// Only internal preview jobs may supply a box ID. Public uploads still require
+// the signed-in owner. Unchanged preview bytes reuse that owner's stored file.
+export const reservePreview = internalMutation({
+  args: { boxId: v.optional(v.id('boxes')), bytes: v.number(), contentType: v.string(), digest: v.string() },
+  handler: async (ctx, { boxId, bytes, contentType, digest }) => {
+    const ownerId = await previewOwner(ctx, boxId);
+    const error = uploadError(bytes, contentType);
+    if (error) throw new ConvexError(error);
+    const files = await ctx.db.query('uploads').withIndex('by_owner_digest', q => q.eq('ownerId', ownerId).eq('digest', digest)).collect();
+    for (const file of files) if (file.storageId && await ctx.db.system.get(file.storageId)) {
+      const url = await ctx.storage.getUrl(file.storageId);
+      if (url) return { url };
+    }
+    return { uploadId: await reserveOwned(ctx, ownerId, bytes, contentType, digest) };
+  },
+});
+
+async function attachOwned(ctx, ownerId, uploadId, storageId) {
+  const row = await ctx.db.get(uploadId);
+  const meta = await ctx.db.system.get(storageId);
+  if (!row || row.ownerId !== ownerId || row.storageId || !meta || meta.size !== row.bytes || (meta.contentType && mediaType(meta.contentType) !== row.contentType))
+    throw new ConvexError('That upload couldn’t be completed.');
+  const url = await ctx.storage.getUrl(storageId);
+  if (!url) throw new ConvexError('That upload couldn’t be completed.');
+  await ctx.db.patch(uploadId, { storageId, url });
+  return url;
+}
 
 // Turn an uploaded file into a URL that can sit in a tile.
 export const attach = internalMutation({
   args: { uploadId: v.id('uploads'), storageId: v.id('_storage') },
   handler: async (ctx, { uploadId, storageId }) => {
     const { user } = await requireOwnBox(ctx);
-    const row = await ctx.db.get(uploadId);
-    const meta = await ctx.db.system.get(storageId);
     // contentType is optional in Convex metadata. The server validated the Blob
     // before storing it; if metadata has a type, it must agree with the reservation.
-    if (!row || row.ownerId !== user._id || row.storageId || !meta || meta.size !== row.bytes || (meta.contentType && mediaType(meta.contentType) !== row.contentType))
-      throw new ConvexError('That upload couldn’t be completed.');
-    const url = await ctx.storage.getUrl(storageId);
-    if (!url) throw new ConvexError('That upload couldn’t be completed.');
-    await ctx.db.patch(uploadId, { storageId, url });
-    return url;
+    return await attachOwned(ctx, user._id, uploadId, storageId);
   },
+});
+
+export const attachPreview = internalMutation({
+  args: { boxId: v.optional(v.id('boxes')), uploadId: v.id('uploads'), storageId: v.id('_storage') },
+  handler: async (ctx, { boxId, uploadId, storageId }) => await attachOwned(ctx, await previewOwner(ctx, boxId), uploadId, storageId),
 });
 
 export const release = internalMutation({

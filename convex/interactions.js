@@ -3,7 +3,7 @@ import { internal } from './_generated/api';
 import { internalMutation, mutation } from './_generated/server';
 import { boxOfUser, currentUser } from './lib';
 import { allow, limit } from './limits';
-import { GH_STALE } from './links';
+import { GH_STALE, queuePreviews } from './links';
 import { VISIT_RETENTION } from './retention';
 
 const MIN = 60 * 1000;
@@ -93,6 +93,7 @@ export const refreshBox = mutation({
     const box = await ctx.db.get(boxId);
     if (!box) return;
     const now = Date.now();
+    await queuePreviews(ctx, box);
     // Someone's looking: a good moment to bring old GitHub graphs up to date.
     const stale = box.tiles.some(t => t.type === 'github' && t.user && !t.demo && now - (t.fetchedAt || 0) > GH_STALE);
     if (stale && now - (box.ghCheckedAt || 0) > 60 * MIN) {

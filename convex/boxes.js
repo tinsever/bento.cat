@@ -9,6 +9,7 @@ import {
 import { syncReferences } from './files';
 import { UNUSED_FILE_TTL } from './mediaPolicy';
 import { eraseUser } from './accounts';
+import { applyPreviews, hasLinkPreview } from '../src/lib/link-previews';
 
 // Everything a page needs to draw a box, with live counts and what this visitor already did.
 // Visitors get only finished tiles; the owner's editor gets everything.
@@ -30,7 +31,7 @@ async function present(ctx, box, visitorKey, { blanks = false } = {}) {
   }
 
   const user = await currentUser(ctx);
-  const tiles = box.tiles.filter(t => blanks || !isBlank(t)).map(t => (t.type === 'purr' ? { ...t, count: counts[t.id] ?? t.count ?? 0 } : t));
+  const tiles = applyPreviews(box).filter(t => blanks || !isBlank(t)).map(t => (t.type === 'purr' ? { ...t, count: counts[t.id] ?? t.count ?? 0 } : t));
 
   return {
     _id: box._id,
@@ -143,6 +144,9 @@ export const save = mutation({
     if (!data || typeof data !== 'object' || Array.isArray(data) || JSON.stringify(data).length > 250_000)
       throw new ConvexError('That box is too large to save.');
     const patch = cleanProfile(data ?? {});
+    if (patch.tiles && box.linkPreviews) patch.linkPreviews = box.linkPreviews.filter(p => patch.tiles.some(t =>
+      hasLinkPreview(t) && t.id === p.tileId && t.url === p.url && t.type === p.type
+      && (t.previewSource?.fetchedAt || 0) <= (p.data?.fetchedAt || p.checkedAt)));
     const revision = expectedRevision + 1, updatedAt = Date.now();
     await syncReferences(ctx, user._id, { ...box, ...patch });
     await ctx.db.patch(box._id, { ...patch, revision, lastSaveId: saveId, updatedAt });

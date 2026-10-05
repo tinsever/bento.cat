@@ -31,8 +31,9 @@ export default defineSchema({
     storageId: v.optional(v.id('_storage')),
     url: v.optional(v.string()),
     referenced: v.boolean(),
+    digest: v.optional(v.string()),
     expiresAt: v.optional(v.number()),
-  }).index('by_owner', ['ownerId']).index('by_url', ['url']).index('by_storage', ['storageId']).index('by_expiry', ['expiresAt']),
+  }).index('by_owner', ['ownerId']).index('by_owner_digest', ['ownerId', 'digest']).index('by_url', ['url']).index('by_storage', ['storageId']).index('by_expiry', ['expiresAt']),
 
   // Files from before uploads had ownership records. Reserve them while checking
   // other boxes, so a concurrent save cannot reference a file about to be removed.
@@ -69,6 +70,8 @@ export default defineSchema({
     lastSaveId: v.optional(v.string()),
     // Last time a visit looked for stale GitHub graphs to refresh.
     ghCheckedAt: v.optional(v.number()),
+    // Fetched previews live apart from editor content and do not advance its revision.
+    linkPreviews: v.optional(v.array(v.any())),
     // false once the owner turns off showing their box to the boxes they visit.
     shareVisits: v.optional(v.boolean()),
     // false once the owner turns off the email about each new subscriber.

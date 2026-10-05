@@ -21,6 +21,9 @@ const MEDIA_KEYS = new Set(['src', 'cover', 'video', 'before', 'avatar', 'avatar
 export function mediaUrls(value, urls = new Set(), key = '') {
   if (typeof value === 'string' && MEDIA_KEYS.has(key) && /^https?:\/\//i.test(value)) urls.add(value);
   else if (Array.isArray(value)) for (const item of value) mediaUrls(item, urls, key);
-  else if (value && typeof value === 'object') for (const [k, item] of Object.entries(value)) mediaUrls(item, urls, k);
+  else if (value && typeof value === 'object') for (const [k, item] of Object.entries(value)) {
+    // Provenance is for comparisons, not another live use of an old image.
+    if (k !== 'previewSource' && k !== 'base') mediaUrls(item, urls, k);
+  }
   return urls;
 }

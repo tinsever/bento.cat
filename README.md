@@ -46,6 +46,14 @@ For your own deployment, configure production values from [.env.example](.env.ex
 
 Public profiles and Explore render their content on the server. Canonical URLs and social previews use `https://bento.cat`; change `SITE_ORIGIN` in `src/lib/seo.js` and the sitemap URL in `static/robots.txt` for another domain. `/sitemap.xml` lists pages with public content, excluding blank claims and boxes opted out of discovery. Login, the editor, empty profiles, and error pages use `noindex`. The default share image is `static/og-image.png`, with its source in `design/social-preview.svg`.
 
+## Link previews
+
+Link previews show their saved images immediately. Opening a public page or its
+editor refreshes previews older than 24 hours in the background, with failed
+requests retried on a later load after an hour. Refreshes keep custom text, images,
+cropping and layout, and reuse unchanged stored images. Older widgets keep their
+existing titles because they did not record whether the owner had changed them.
+
 ## Contributing and license
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
