@@ -40,7 +40,7 @@ export function publicUrl(raw) {
 }
 
 // fetch with a deadline, a size cap and redirects checked one hop at a time.
-async function get(raw, { max = PAGE_MAX, accept = 'text/html,application/xhtml+xml', ms = 7000 } = {}) {
+async function get(raw, { max = PAGE_MAX, accept = 'text/html,application/xhtml+xml', ms = 7000, onAbsent } = {}) {
   let url = publicUrl(raw);
   for (let hop = 0; url && hop < 5; hop++) {
     const ctl = new AbortController();
@@ -57,7 +57,11 @@ async function get(raw, { max = PAGE_MAX, accept = 'text/html,application/xhtml+
       url = publicUrl(new URL(res.headers.get('location'), url).href);
       continue;
     }
-    if (!res.ok || !res.body) { clearTimeout(timer); return null; }
+    if (!res.ok || !res.body) {
+      if ([404, 410].includes(res.status) || (res.ok && !res.body)) onAbsent?.();
+      clearTimeout(timer);
+      return null;
+    }
     const reader = res.body.getReader();
     const chunks = [];
     let size = 0;
@@ -130,9 +134,11 @@ function readHead(html, base) {
 }
 
 // Copy a picture into our own storage so previews don't break when the source moves.
-async function keep(ctx, raw, boxId) {
-  const r = await get(raw, { max: IMAGE_MAX, accept: 'image/avif,image/webp,image/png,image/jpeg,image/gif,image/x-icon,image/*' });
-  if (!r || !/^image\/(png|jpe?g|gif|webp|avif|x-icon|vnd\.microsoft\.icon)/.test(r.type) || r.bytes.length < 64) return null;
+async function keep(ctx, raw, boxId, onAbsent) {
+  if (!publicUrl(raw)) { onAbsent?.(); return null; }
+  const r = await get(raw, { max: IMAGE_MAX, accept: 'image/avif,image/webp,image/png,image/jpeg,image/gif,image/x-icon,image/*', onAbsent });
+  if (!r) return null;
+  if (!/^image\/(png|jpe?g|gif|webp|avif|x-icon|vnd\.microsoft\.icon)/.test(r.type) || r.bytes.length < 64) { onAbsent?.(); return null; }
   try {
     return await storePreview(ctx, new Blob([r.bytes], { type: r.type.split(';')[0] }), boxId);
   } catch {
@@ -143,11 +149,14 @@ async function keep(ctx, raw, boxId) {
 async function keepIcon(ctx, candidates, boxId) {
   // Try a few advertised icons and always include the conventional fallback.
   const urls = [...new Set([...candidates.slice(0, 2), candidates.at(-1)])];
+  let incomplete = false;
   for (const url of urls) {
-    const icon = await keep(ctx, url, boxId);
-    if (icon) return icon;
+    let absent = false;
+    const src = await keep(ctx, url, boxId, () => { absent = true; });
+    if (src) return { src, incomplete: false };
+    if (!absent) incomplete = true;
   }
-  return null;
+  return { src: null, incomplete };
 }
 
 const prettyHost = host => {
@@ -235,15 +244,16 @@ async function unfurlUrl(ctx, u, { boxId, refresh = false } = {}) {
   const head = page && /html/.test(page.type) ? readHead(text(page), page.url) : null;
   if (refresh && !head) return null;
   const image = head?.image ? await keep(ctx, head.image, boxId) : null;
-  const icon = head ? await keepIcon(ctx, head.icons, boxId) : null;
+  const favicon = head ? await keepIcon(ctx, head.icons, boxId) : { src: null, incomplete: true };
+  const icon = favicon.src;
   return {
     type: 'link',
     url,
     title: head?.title || (refresh ? '' : prettyHost(host)),
     preview: image ? { kind: 'image', src: image } : null,
     icon: icon ? { src: icon } : null,
-    incomplete: !head || (!!head.image && !image) || !icon,
-    failedFields: [...(!head || (head.image && !image) ? ['preview'] : []), ...(!icon ? ['icon'] : [])],
+    incomplete: !head || (!!head.image && !image) || favicon.incomplete,
+    failedFields: [...(!head || (head.image && !image) ? ['preview'] : []), ...(favicon.incomplete ? ['icon'] : [])],
   };
 }
 

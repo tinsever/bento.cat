@@ -90,6 +90,20 @@ describe('automatic link previews', () => {
     expect((await view(t)).tiles[0].title).toBe('Recovered title');
   });
 
+  it.each([404, 410])('treats a missing favicon (%s) as complete without retrying every hour', async status => {
+    const { t, boxId } = await setup();
+    vi.advanceTimersByTime(PREVIEW_STALE);
+    const fetch = vi.fn(async url => String(url) === URL ? new Response('<head><title>No favicon</title></head>', { headers: { 'content-type': 'text/html' } }) : new Response('', { status }));
+    vi.stubGlobal('fetch', fetch);
+    await refresh(t, boxId);
+    expect((await view(t)).tiles[0]).toMatchObject({ title: 'No favicon', icon: null });
+    expect((await t.run(ctx => ctx.db.get(boxId))).linkPreviews[0].incomplete).toBe(false);
+    fetch.mockClear();
+    vi.advanceTimersByTime(PREVIEW_RETRY);
+    await refresh(t, boxId);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it('serves the stored preview immediately and fetches only after 24 hours', async () => {
     const { t, a, boxId, tile } = await setup();
     const fetch = mockSite({ title: 'New title', cover: 'new-cover', icon: 'new-icon' });
