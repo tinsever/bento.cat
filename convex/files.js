@@ -38,6 +38,19 @@ async function previewOwner(ctx, boxId) {
 
 // Only internal preview jobs may supply a box ID. Public uploads still require
 // the signed-in owner. Unchanged preview bytes reuse that owner's stored file.
+async function reusePreview(ctx, file) {
+  if (!file.storageId || !(await ctx.db.system.get(file.storageId))) return null;
+  const url = await ctx.storage.getUrl(file.storageId);
+  if (!url) return null;
+  // Reserve time for the caller to attach a reused file before an older cleanup
+  // job can remove it. Abandoned imports still expire normally.
+  if (!file.referenced) {
+    await ctx.db.patch(file._id, { expiresAt: Date.now() + UNUSED_FILE_TTL });
+    await ctx.scheduler.runAfter(UNUSED_FILE_TTL, internal.files.cleanup, { uploadId: file._id });
+  }
+  return url;
+}
+
 export const reservePreview = internalMutation({
   args: { boxId: v.optional(v.id('boxes')), bytes: v.number(), contentType: v.string(), digest: v.string() },
   handler: async (ctx, { boxId, bytes, contentType, digest }) => {
@@ -45,17 +58,9 @@ export const reservePreview = internalMutation({
     const error = uploadError(bytes, contentType);
     if (error) throw new ConvexError(error);
     const files = await ctx.db.query('uploads').withIndex('by_owner_digest', q => q.eq('ownerId', ownerId).eq('digest', digest)).collect();
-    for (const file of files) if (file.storageId && await ctx.db.system.get(file.storageId)) {
-      const url = await ctx.storage.getUrl(file.storageId);
-      if (url) {
-        // Reserve time for the caller to attach a reused file before an older
-        // cleanup job can remove it. Abandoned imports still expire normally.
-        if (!file.referenced) {
-          await ctx.db.patch(file._id, { expiresAt: Date.now() + UNUSED_FILE_TTL });
-          await ctx.scheduler.runAfter(UNUSED_FILE_TTL, internal.files.cleanup, { uploadId: file._id });
-        }
-        return { url };
-      }
+    for (const file of files) {
+      const url = await reusePreview(ctx, file);
+      if (url) return { url };
     }
     return { uploadId: await reserveOwned(ctx, ownerId, bytes, contentType, digest) };
   },
@@ -66,6 +71,19 @@ async function attachOwned(ctx, ownerId, uploadId, storageId) {
   const meta = await ctx.db.system.get(storageId);
   if (!row || row.ownerId !== ownerId || row.storageId || !meta || meta.size !== row.bytes || (meta.contentType && mediaType(meta.contentType) !== row.contentType))
     throw new ConvexError('That upload couldn’t be completed.');
+  // Overlapping preview actions may reserve the same new digest before either
+  // blob is attached. Collapse the second upload in this serialized mutation.
+  if (row.digest) {
+    const files = await ctx.db.query('uploads').withIndex('by_owner_digest', q => q.eq('ownerId', ownerId).eq('digest', row.digest)).collect();
+    for (const file of files) if (file._id !== uploadId) {
+      const shared = await reusePreview(ctx, file);
+      if (shared) {
+        await ctx.storage.delete(storageId);
+        await ctx.db.delete(uploadId);
+        return shared;
+      }
+    }
+  }
   const url = await ctx.storage.getUrl(storageId);
   if (!url) throw new ConvexError('That upload couldn’t be completed.');
   await ctx.db.patch(uploadId, { storageId, url });

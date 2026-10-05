@@ -242,6 +242,23 @@ describe('automatic link previews', () => {
     expect((await view(t)).tiles[0].icon).toEqual(tile.icon);
   });
 
+  it('collapses identical uploads reserved before either preview finished', async () => {
+    const { t, boxId } = await setup({ id: 'note', type: 'note', html: 'Hello' });
+    const args = { boxId, bytes: 128, contentType: 'image/png', digest: 'shared-image' };
+    const first = await t.mutation(internal.files.reservePreview, args);
+    const second = await t.mutation(internal.files.reservePreview, args);
+    expect(await uploads(t)).toHaveLength(2);
+    const store = () => t.run(ctx => ctx.storage.store(new Blob(['x'.repeat(128)], { type: 'image/png' })));
+    const firstStorage = await store();
+    const secondStorage = await store();
+    const firstUrl = await t.mutation(internal.files.attachPreview, { boxId, uploadId: first.uploadId, storageId: firstStorage });
+    const secondUrl = await t.mutation(internal.files.attachPreview, { boxId, uploadId: second.uploadId, storageId: secondStorage });
+    expect(secondUrl).toBe(firstUrl);
+    expect(await uploads(t)).toHaveLength(1);
+    expect(await t.run(ctx => ctx.db.system.get(secondStorage))).toBeNull();
+    expect(await t.run(ctx => ctx.db.system.get(firstStorage))).not.toBeNull();
+  });
+
   it.each(['removed', 'changed URL', 'changed type'])('ignores a delayed result after a tile is %s', async change => {
     const { t, tile, boxId, save } = await setup();
     vi.advanceTimersByTime(PREVIEW_STALE);
