@@ -8,7 +8,7 @@ export function hasLinkPreview(tile) {
 }
 
 export function previewSource(tile, fetchedAt = Date.now()) {
-  return { url: tile.url, type: tile.type, fetchedAt, values: Object.fromEntries(FIELDS.filter(k => tile[k] != null && tile[k] !== '').map(k => [k, tile[k]])) };
+  return { url: tile.url, type: tile.type, fetchedAt, values: Object.fromEntries(FIELDS.filter(k => k in tile && tile[k] !== undefined && tile[k] !== '').map(k => [k, tile[k]])) };
 }
 
 // Older tiles have no record of their fetched title. Keep their wording, but
@@ -28,7 +28,7 @@ export function mergePreview(tile, cached) {
   const next = { ...tile };
   for (const key of FIELDS) {
     const value = cached.data.values[key];
-    if (value == null || value === '') continue;
+    if (!(key in cached.data.values) || value === '') continue;
     if (same(tile[key], base?.values[key]) || (tile[key] == null && base?.values[key] == null)) next[key] = value;
   }
   next.previewSource = cached.data;

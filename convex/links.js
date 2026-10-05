@@ -202,7 +202,7 @@ async function unfurlUrl(ctx, u, { boxId, refresh = false } = {}) {
     if (refresh && !o?.title) return null;
     const kind = SPOTIFY_KIND[parts.find(p => SPOTIFY_KIND[p])] || '';
     const cover = o?.thumbnail_url ? await keep(ctx, o.thumbnail_url, boxId) : null;
-    return { type: 'music', url, title: (o?.title || 'Something to listen to').slice(0, 120), sub: kind, cover, incomplete: !!o?.thumbnail_url && !cover };
+    return { type: 'music', url, title: (o?.title || 'Something to listen to').slice(0, 120), sub: kind, cover, incomplete: !o?.title || (!!o.thumbnail_url && !cover), failedFields: o?.thumbnail_url && !cover ? ['cover'] : [] };
   }
 
   // A playlist's page describes its current cover. A watch URL with both v and
@@ -214,7 +214,7 @@ async function unfurlUrl(ctx, u, { boxId, refresh = false } = {}) {
     const head = page && /html/.test(page.type) ? readHead(text(page), page.url) : null;
     if (head?.title && head.image) {
       const src = await keep(ctx, head.image, boxId);
-      return { type: 'video', url, title: head.title, meta: 'Playlist on YouTube', src, pos: '50% 50%', incomplete: !src };
+      return { type: 'video', url, title: head.title, meta: 'Playlist on YouTube', src, pos: '50% 50%', incomplete: !src, failedFields: src ? [] : ['src'] };
     }
   }
 
@@ -223,7 +223,7 @@ async function unfurlUrl(ctx, u, { boxId, refresh = false } = {}) {
     const o = await json(endpoint + encodeURIComponent(url));
     if (o?.title) {
       const thumb = o.thumbnail_url ? await keep(ctx, o.thumbnail_url, boxId) : null;
-      return { type: 'video', url, title: o.title.slice(0, 120), meta: `${o.author_name ? o.author_name.slice(0, 60) + ' on ' : 'On '}${host === 'vimeo.com' ? 'Vimeo' : 'YouTube'}`, src: thumb, pos: '50% 50%', incomplete: !!o.thumbnail_url && !thumb };
+      return { type: 'video', url, title: o.title.slice(0, 120), meta: `${o.author_name ? o.author_name.slice(0, 60) + ' on ' : 'On '}${host === 'vimeo.com' ? 'Vimeo' : 'YouTube'}`, src: thumb, pos: '50% 50%', incomplete: !!o.thumbnail_url && !thumb, failedFields: o.thumbnail_url && !thumb ? ['src'] : [] };
     }
   }
 
@@ -239,6 +239,7 @@ async function unfurlUrl(ctx, u, { boxId, refresh = false } = {}) {
     preview: image ? { kind: 'image', src: image } : null,
     icon: icon ? { src: icon } : null,
     incomplete: !head || (!!head.image && !image) || !icon,
+    failedFields: [...(!head || (head.image && !image) ? ['preview'] : []), ...(!icon ? ['icon'] : [])],
   };
 }
 
@@ -254,8 +255,13 @@ export const unfurl = action({
     const result = await unfurlUrl(ctx, u, { refresh });
     if (!result) return null;
     const fetchedAt = result.incomplete ? 0 : Date.now();
+    const failedFields = result.failedFields || [];
     delete result.incomplete;
-    if (hasLinkPreview(result)) result.previewSource = previewSource(result, fetchedAt);
+    delete result.failedFields;
+    if (hasLinkPreview(result)) {
+      result.previewSource = previewSource(result, fetchedAt);
+      for (const key of failedFields) delete result.previewSource.values[key];
+    }
     return result;
   },
 });
@@ -311,12 +317,19 @@ export const finishPreview = internalMutation({
     const cached = box.linkPreviews?.find(p => p.tileId === tileId);
     if (!tile || !hasLinkPreview(tile) || tile.url !== url || cached?.url !== url || cached.checkedAt !== checkedAt || cached.type !== tile.type) return;
     let data = result;
+    let failedFields = result?.failedFields || [];
     // Refresh imported playlist tiles that older versions stored as generic links
     // without changing their type, size, or crop.
-    if (result?.type === 'video' && tile.type === 'link') data = { ...result, type: 'link', preview: result.src ? { kind: 'image', src: result.src } : null };
-    else if (result?.type === 'link' && tile.type === 'video') data = { ...result, type: 'video', src: result.preview?.src || null };
+    if (result?.type === 'video' && tile.type === 'link') {
+      data = { ...result, type: 'link', preview: result.src ? { kind: 'image', src: result.src } : null };
+      if (failedFields.includes('src')) failedFields = [...failedFields, 'preview'];
+    } else if (result?.type === 'link' && tile.type === 'video') {
+      data = { ...result, type: 'video', src: result.preview?.src || null };
+      if (failedFields.includes('preview')) failedFields = [...failedFields, 'src'];
+    }
     if (!data || data.type !== tile.type) return;
     const fresh = previewSource(data);
+    for (const key of failedFields) delete fresh.values[key];
     const source = { ...fresh, values: { ...(cached.data?.values || cached.base.values), ...fresh.values } };
     const linkPreviews = box.linkPreviews.map(p => p.tileId === tileId ? { ...p, data: source, incomplete: !!data.incomplete } : p);
     await syncReferences(ctx, box.ownerId, { ...box, linkPreviews });

@@ -118,6 +118,21 @@ describe('automatic link previews', () => {
     expect((await view(t)).tiles[0].preview).not.toEqual(tile.preview);
   });
 
+  it.each(['link', 'music', 'video'])('clears an automatic %s image when successful metadata removes it', async type => {
+    const url = type === 'music' ? 'https://open.spotify.com/playlist/cats' : type === 'video' ? 'https://www.youtube.com/watch?v=cat' : URL;
+    const field = type === 'music' ? 'cover' : type === 'video' ? 'src' : 'preview';
+    const original = { id: 'tile', type, url, title: 'Original', [field]: type === 'link' ? { kind: 'image', src: 'https://example.com/old.png' } : 'https://example.com/old.png' };
+    const { t, boxId } = await setup({ ...original, previewSource: previewSource(original, 1) });
+    if (type === 'link') mockSite({ title: 'Updated', cover: null });
+    else vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ title: 'Updated' }), { headers: { 'content-type': 'application/json' } })));
+    await refresh(t, boxId);
+    expect((await view(t)).tiles[0][field]).toBeNull();
+    expect((await view(t)).tiles[0].title).toBe('Updated');
+    vi.advanceTimersByTime(PREVIEW_STALE);
+    await refresh(t, boxId);
+    expect((await view(t)).tiles[0][field]).toBeNull();
+  });
+
   it('reuses unchanged stored images without filling the owner quota', async () => {
     const { t, boxId, tile } = await setup();
     for (let i = 0; i < 3; i++) {
