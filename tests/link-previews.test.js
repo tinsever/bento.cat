@@ -253,6 +253,21 @@ describe('automatic link previews', () => {
     expect(await uploads(t)).toEqual([]);
   });
 
+  it('reclaims superseded automatic images without waiting for an editor save', async () => {
+    const { t, boxId, tile } = await setup();
+    vi.advanceTimersByTime(PREVIEW_STALE);
+    mockSite({ icon: 'new-icon', cover: 'new-cover' });
+    await refresh(t, boxId);
+    const fresh = (await view(t)).tiles[0];
+    const files = await uploads(t);
+    expect(files.filter(file => file.referenced).map(file => file.url).sort()).toEqual([fresh.icon.src, fresh.preview.src].sort());
+    expect((await t.run(ctx => ctx.db.get(boxId))).tiles[0].icon).toEqual(tile.icon);
+    vi.advanceTimersByTime(UNUSED_FILE_TTL);
+    await t.finishInProgressScheduledFunctions();
+    expect((await uploads(t)).map(file => file.url).sort()).toEqual([fresh.icon.src, fresh.preview.src].sort());
+    expect((await view(t)).tiles[0]).toEqual(fresh);
+  });
+
   it('does not expose provenance cache to another owner or anonymous callers', async () => {
     const { t, boxId } = await setup();
     await expect(t.query(api.links.previews, { boxId })).rejects.toThrow('Sign in first');

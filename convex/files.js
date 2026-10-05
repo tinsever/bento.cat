@@ -4,6 +4,7 @@ import { internalMutation, query } from './_generated/server';
 import { requireOwnBox } from './lib';
 import { limit } from './limits';
 import { MAX_OWNER_BYTES, MAX_OWNER_FILES, UNUSED_FILE_TTL, mediaType, mediaUrls, uploadError } from './mediaPolicy';
+import { applyPreviews } from '../src/lib/link-previews';
 
 async function reserveOwned(ctx, ownerId, bytes, contentType, digest) {
   const error = uploadError(bytes, contentType);
@@ -100,7 +101,10 @@ export const cleanup = internalMutation({
 // Keep removed files for 24 hours so Undo can restore them. Older cleanup jobs
 // also check the current expiry before deleting anything.
 export async function syncReferences(ctx, userId, profile) {
-  const urls = mediaUrls(profile);
+  // Only the effective tile images are live. Raw tiles and cache comparison
+  // values may still name an automatic image that a refresh already replaced.
+  const effective = profile.linkPreviews && profile.tiles ? { ...profile, tiles: applyPreviews(profile), linkPreviews: [] } : profile;
+  const urls = mediaUrls(effective);
   for (const url of urls) {
     if (await ctx.db.query('legacyMediaPurges').withIndex('by_url', q => q.eq('url', url)).first())
       throw new ConvexError('That media is being removed. Upload your own copy instead.');
