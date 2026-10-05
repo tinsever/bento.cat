@@ -1,6 +1,7 @@
 import { action, clerk, mutation, posterOf, query, reason, upload, watch } from '../api.js';
 import { Box } from './box.js';
 import { createSaveQueue, draftJournal } from '../save-queue.js';
+import { hasLinkPreview, mergePreview, mergeReplacementPreview, previewSource } from '../link-previews.js';
 import { hasCoords, zoomOf } from './map.js';
 import { AVATAR_SHAPES, DAY, sz } from './data.js';
 import { ALL_POSES, POSES, TINTS, TYPES, bg, corner, num, paintRange, serviceOf, sizeOf, tilesFor, tintOf, titleOf } from './tiles.js';
@@ -56,8 +57,6 @@ export const prettyHost = host => {
   return base.split(/[-_]/).map(w => w ? w[0].toUpperCase() + w.slice(1) : w).join(' ');
 };
 
-export const Fetching = new Set();
-
 const VIDEO_HOSTS = /(^|\.)(youtube\.com|youtu\.be|vimeo\.com)$/;
 
 // A first guess from the address alone, so the tile shows up straight away.
@@ -77,6 +76,8 @@ export function guessLink(raw) {
 // `box` is the signed-in person's box from Convex. The editor works on it locally
 // and saves the whole thing back a moment after each change.
 export function EditorView(app, box, opts = {}) {
+  const Fetching = new Set();
+  let pendingPreviews = null;
   const S = {
     device: innerWidth < 760 ? 'm' : 'd',
     sel: null, undo: [], redo: [], press: null, drag: null,
@@ -397,7 +398,20 @@ export function EditorView(app, box, opts = {}) {
       if (u && t.type === 'music' && !serviceOf(u)) { inp.animate([{ transform: 'translateX(-5px)' }, { transform: 'translateX(5px)' }, { transform: 'none' }], { duration: 220 }); toast('Music tiles take Spotify links.'); return; }
       if (!u && t.type === 'link') return;
       Pop.close();
-      commit(bx => { const x = findIn(bx, t.id); x.url = u ? normUrl(u) : ''; delete x.demo; if (x.type === 'link') x.icon = platformOf(x.url) ? { platform: platformOf(x.url) } : null; }, { animate: false });
+      const url = u ? normUrl(u) : '';
+      if (url === t.url) return;
+      const imported = ['link', 'music', 'video'].includes(t.type) && !t.video;
+      const baseline = t.previewSource?.values || { icon: t.icon, src: t.src, cover: t.cover, preview: t.preview };
+      commit(bx => {
+        const x = findIn(bx, t.id);
+        x.url = url;
+        delete x.demo;
+        if (url && imported) {
+          x.previewSource = { url, type: x.type, fetchedAt: 0, values: baseline };
+          x.loading = true;
+        } else delete x.previewSource;
+      }, { animate: false });
+      if (url && imported) unfurl(t.id, { refresh: true, baseline });
     });
     pop.querySelector('[data-clear]')?.addEventListener('click', () => { Pop.close(); commit(bx => { const x = findIn(bx, t.id); x.url = ''; delete x.demo; }, { animate: false }); });
   }
@@ -817,6 +831,7 @@ export function EditorView(app, box, opts = {}) {
     if (f && S.editing && S.editing.node === f) {
       const { field, key, before } = S.editing;
       S.editing = null;
+      if (pendingPreviews) queueMicrotask(() => { if (alive && pendingPreviews) applyCachedPreviews(pendingPreviews); });
       const val = field === 'html' ? applyMarks(sanitize(f.innerHTML)) : f.textContent.replace(/\s+/g, ' ').trim();
       const obj = key === '__bio' ? box : find(key);
       if (!obj) return;
@@ -900,33 +915,61 @@ export function EditorView(app, box, opts = {}) {
   });
 
   // Ask the server what the link really is, then fold the answer into the tile.
-  async function unfurl(id) {
+  async function unfurl(id, { refresh = false, baseline } = {}) {
     const t0 = find(id);
     if (!t0?.url || Fetching.has(id)) return;
     const firstSize = JSON.stringify(t0.size);
+    const originalUrl = t0.url;
+    const original = JSON.parse(JSON.stringify(t0));
     Fetching.add(id);
     elOf(id)?.classList.add('loading');
     let res = null;
     try {
-      res = await action('links:unfurl', { url: t0.url });
+      res = await action('links:unfurl', { url: t0.url, refresh });
     } catch (err) {
       toast(esc(reason(err)));
     }
     Fetching.delete(id);
+    if (!alive) return;
     elOf(id)?.classList.remove('loading');
     const t = find(id);
-    if (!t) return;
+    if (!t || t.url !== originalUrl) {
+      if (t?.url) unfurl(id, { refresh: true });
+      return;
+    }
     const before = JSON.stringify(box);
     const x = t;
+    const current = JSON.parse(JSON.stringify(t));
+    const prior = baseline || original.previewSource?.values || original;
     delete x.loading;
     if (res) {
       const untouched = JSON.stringify(x.size) === firstSize;
       const poses = TYPES[res.type]?.poses || ALL_POSES;
-      for (const k of ['title', 'sub', 'cover', 'src', 'pos', 'meta', 'preview', 'icon', 'user', 'levels', 'counts', 'start', 'total', 'fetchedAt']) delete x[k];
-      Object.assign(x, res);
-      if (untouched && res.type === 'link' && res.preview && sizeOf(x, 'd') === 'curl') x.size = sz('loaf');
+      if (refresh && res.previewSource && res.type === x.type) {
+        // Preserve edits made while the request was in flight. The URL changed,
+        // so these original fields are only a baseline for this one response.
+        Object.assign(x, mergeReplacementPreview(x, res.previewSource, prior));
+      } else {
+        for (const k of ['title', 'sub', 'cover', 'src', 'pos', 'meta', 'preview', 'icon', 'user', 'levels', 'counts', 'start', 'total', 'fetchedAt', 'previewSource']) delete x[k];
+        Object.assign(x, res);
+        // A title typed while a newly added tile was loading belongs to its owner.
+        if ((current.title !== original.title || (refresh && current.title !== prior.title)) && current.title) x.title = current.title;
+        if (refresh) {
+          x.pos = current.pos || '50% 50%';
+          for (const key of ['src', 'cover', 'preview']) if (current[key] && JSON.stringify(current[key]) !== JSON.stringify(prior[key])) x[key] = current[key];
+        }
+      }
+      if (!refresh && untouched && res.type === 'link' && res.preview && sizeOf(x, 'd') === 'curl') x.size = sz('loaf');
       // Each layout only gives up a pose the new type can't take.
       for (const dv of ['d', 'm']) if (!poses.includes(sizeOf(x, dv))) x.size = { ...x.size, [dv]: res.type === 'link' ? 'curl' : 'loaf' };
+    } else if (refresh) {
+      // A failed replacement URL must not advertise the old destination. Keep
+      // custom fields, but clear the old automatic preview until a retry works.
+      Object.assign(x, mergeReplacementPreview(x, previewSource({ url: x.url, type: x.type }, 0), prior));
+    } else if (hasLinkPreview(x)) {
+      // Keep the original guess as the automatic baseline even if the first
+      // request fails, so a later retry can replace it without losing edits.
+      x.previewSource = previewSource(original, 0);
     }
     commit(() => {}, { before });
   }
@@ -1883,6 +1926,23 @@ export function EditorView(app, box, opts = {}) {
     lastVisit = at ?? 0;
   }, () => {});
 
+  function applyCachedPreviews(cached) {
+    if (!alive) return;
+    // Rendering replaces editable nodes. Apply the latest preview after typing
+    // has finished so focus, the caret, and unsaved text stay intact.
+    if (S.editing) { pendingPreviews = cached; return; }
+    pendingPreviews = null;
+    let changed = false;
+    box.tiles = box.tiles.map(tile => {
+      const next = mergePreview(tile, cached.find(p => p.tileId === tile.id));
+      if (JSON.stringify(next) !== JSON.stringify(tile)) changed = true;
+      return next;
+    });
+    if (changed) render(false);
+  }
+  const stopPreviews = watch('links:previews', { boxId: box._id }, applyCachedPreviews, () => {});
+  mutation('interactions:refreshBox', { boxId: box._id }).catch(() => {});
+
   // Don't lose the last edit when the tab closes mid-save.
   const onLeave = e => { if (saves.pending || saves.inFlight || S.uploads) { void flush(); e.preventDefault(); e.returnValue = ''; } };
   const onHidden = () => { if (document.hidden && saves.pending) void flush(); };
@@ -1892,7 +1952,7 @@ export function EditorView(app, box, opts = {}) {
   setSave('idle');
   render(false);
   saves.resume();
-  for (const t of box.tiles) if (t.loading) unfurl(t.id);
+  for (const t of box.tiles) if (t.loading) unfurl(t.id, { refresh: !!t.previewSource, baseline: t.previewSource?.values });
   if (box.onboarding && !box.tiles.length && !box.name) setTimeout(() => focusTile('__bio'), 300);
   if (opts.open === 'subscribers') openSubscribers();
 
@@ -1903,6 +1963,7 @@ export function EditorView(app, box, opts = {}) {
     saves.dispose();
     if (saves.pending) void flush();
     stopVisits();
+    stopPreviews();
     S.subsClose?.();
     removeEventListener('beforeunload', onLeave);
     document.removeEventListener('visibilitychange', onHidden);

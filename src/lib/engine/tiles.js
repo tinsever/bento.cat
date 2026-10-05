@@ -121,7 +121,7 @@ export function odoSet(el, n) {
 
 export function linkIcon(t) {
   const ic = t.icon;
-  if (ic && ic.src && safeSrc(ic.src)) return `<div class="icon-sq fav"><img src="${safeSrc(ic.src)}" alt="" loading="lazy" referrerpolicy="no-referrer"></div>`;
+  if (ic && ic.src && safeSrc(ic.src)) return `<div class="fav-wrap">${linkIcon({ ...t, icon: null })}<div class="icon-sq fav"><img src="${safeSrc(ic.src)}" alt="" loading="lazy" referrerpolicy="no-referrer"></div></div>`;
   if (ic === 'mail') return `<div class="icon-sq">${I.mail()}</div>`;
   if (ic && ic.glyph) return `<div class="icon-sq dark glyph-sq">${esc(ic.glyph)}</div>`;
   const p = (ic && ic.platform) || platformOf(t.url);
@@ -372,6 +372,14 @@ export const Tiles = {
 /* ---------- things that need a live element ---------- */
 
 export const Hydrate = {
+  link(el) {
+    const img = el.querySelector('.fav img');
+    if (!img) return;
+    const fail = () => img.closest('.fav').remove();
+    img.addEventListener('error', fail, { once: true });
+    if (img.complete && img.currentSrc && img.naturalWidth === 0) fail();
+    return () => img.removeEventListener('error', fail);
+  },
   hours(el, t) { updateHours(el, t); },
 
   map(el, t, root) { mountMap(el, t, root._mode); },
