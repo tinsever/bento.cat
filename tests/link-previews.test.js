@@ -32,6 +32,7 @@ async function setup(tile) {
   return { t, a, save, tile: imported, boxId: (await a.query(api.boxes.mine))._id };
 }
 const view = t => t.query(api.boxes.get, { handle: 'owner' });
+const publicTile = tile => Object.fromEntries(Object.entries(tile).filter(([key]) => key !== 'previewSource'));
 const jobs = t => t.run(ctx => ctx.db.system.query('_scheduled_functions').collect());
 const uploads = t => t.run(ctx => ctx.db.query('uploads').collect());
 async function refresh(t, boxId) {
@@ -49,10 +50,10 @@ describe('automatic link previews', () => {
     const fetch = mockSite({ title: 'New title', cover: 'new-cover', icon: 'new-icon' });
     await refresh(t, boxId);
     expect(fetch).not.toHaveBeenCalled();
-    expect((await view(t)).tiles[0]).toEqual(tile);
+    expect((await view(t)).tiles[0]).toEqual(publicTile(tile));
     vi.advanceTimersByTime(PREVIEW_STALE);
     await t.mutation(api.interactions.refreshBox, { boxId });
-    expect((await view(t)).tiles[0]).toEqual(tile);
+    expect((await view(t)).tiles[0]).toEqual(publicTile(tile));
     vi.advanceTimersByTime(0);
     await t.finishInProgressScheduledFunctions();
     const fresh = (await view(t)).tiles[0];
@@ -92,7 +93,7 @@ describe('automatic link previews', () => {
     vi.advanceTimersByTime(PREVIEW_STALE);
     const fetch = mockSite({ fail: true });
     await refresh(t, boxId);
-    expect((await view(t)).tiles[0]).toEqual(tile);
+    expect((await view(t)).tiles[0]).toEqual(publicTile(tile));
     expect(fetch).toHaveBeenCalledTimes(1);
     await refresh(t, boxId);
     expect(fetch).toHaveBeenCalledTimes(1);
@@ -136,16 +137,16 @@ describe('automatic link previews', () => {
     const tiles = change === 'removed' ? [] : [{ ...tile, ...(change === 'changed URL' ? { url: 'https://other.example.com/' } : { type: 'photo' }) }];
     await save(tiles);
     await t.mutation(internal.links.finishPreview, { boxId, tileId: tile.id, url: tile.url, checkedAt: cached.checkedAt, result: { type: 'link', url: tile.url, title: 'Late result' } });
-    expect((await view(t)).tiles).toEqual(tiles);
+    expect((await view(t)).tiles).toEqual(tiles.map(publicTile));
     expect((await t.run(ctx => ctx.db.get(boxId))).linkPreviews).toEqual([]);
   });
 
   it('keeps refreshed files referenced and cleans replaced files after the grace period', async () => {
-    const { t, boxId, tile, save } = await setup();
+    const { t, a, boxId, tile, save } = await setup();
     vi.advanceTimersByTime(PREVIEW_STALE);
     mockSite({ icon: 'new-icon', cover: 'new-cover' });
     await refresh(t, boxId);
-    const fresh = (await view(t)).tiles[0];
+    const fresh = (await a.query(api.boxes.mine)).tiles[0];
     await save([fresh]);
     vi.advanceTimersByTime(UNUSED_FILE_TTL);
     await t.finishInProgressScheduledFunctions();
@@ -164,6 +165,18 @@ describe('automatic link previews', () => {
     await b.mutation(api.users.store);
     await b.mutation(api.boxes.claim, { handle: 'other' });
     expect(await b.query(api.links.previews, { boxId })).toEqual([]);
+  });
+
+  it('hides replaced preview content from public responses while retaining editor provenance', async () => {
+    const { t, a, tile, save } = await setup();
+    await save([{ ...tile, title: 'My replacement title', icon: null, preview: null }]);
+    const publicBox = await view(t);
+    expect(publicBox.tiles[0]).not.toHaveProperty('previewSource');
+    expect(JSON.stringify(publicBox)).not.toContain('Original title');
+    expect(JSON.stringify(publicBox)).not.toContain(tile.icon.src);
+    expect(JSON.stringify(publicBox)).not.toContain(tile.preview.src);
+    expect((await a.query(api.boxes.get, { handle: 'owner' })).tiles[0]).not.toHaveProperty('previewSource');
+    expect((await a.query(api.boxes.mine)).tiles[0].previewSource).toEqual(tile.previewSource);
   });
 });
 

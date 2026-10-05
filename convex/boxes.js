@@ -31,7 +31,14 @@ async function present(ctx, box, visitorKey, { blanks = false } = {}) {
   }
 
   const user = await currentUser(ctx);
-  const tiles = applyPreviews(box).filter(t => blanks || !isBlank(t)).map(t => (t.type === 'purr' ? { ...t, count: counts[t.id] ?? t.count ?? 0 } : t));
+  const tiles = applyPreviews(box).filter(t => blanks || !isBlank(t)).map(t => {
+    let tile = t;
+    if (!blanks) {
+      const { previewSource: _source, ...visible } = tile;
+      tile = visible;
+    }
+    return tile.type === 'purr' ? { ...tile, count: counts[tile.id] ?? tile.count ?? 0 } : tile;
+  });
 
   return {
     _id: box._id,
