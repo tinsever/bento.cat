@@ -42,7 +42,7 @@ jobs:
         run: '"$RUNNER_TEMP/gitleaks" git --redact --log-opts="--all" .'
 
   deploy:
-    name: Deploy to PPH
+    name: Deploy to home server
     needs: [check, secrets]
     if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
@@ -74,4 +74,4 @@ jobs:
             -o BatchMode=yes -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$hosts_file" \
             -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=10 \
-            bento-deploy@212.87.214.144 "deploy $DEPLOY_SHA"
+            bento-deploy@178.105.204.43 "deploy $DEPLOY_SHA"
