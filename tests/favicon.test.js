@@ -31,7 +31,7 @@ describe('favicon fallbacks', () => {
     expect(remove).not.toHaveBeenCalled();
   });
 
-  it.each(['link', 'music'])('requests one preview recovery per %s tile and cleans up listeners', type => {
+  it.each(['link', 'music'])('deduplicates recovery for the same %s image and cleans up listeners', type => {
     mutation.mockResolvedValue(undefined);
     mutation.mockClear();
     const listeners = [];
@@ -50,5 +50,35 @@ describe('favicon fallbacks', () => {
 
   it('renders a music cover as an image so failed requests can recover', () => {
     expect(R.music({ id: 'music', cover: 'https://example.com/cover.jpg' }, { size: 'loaf' })).toContain('<img src="https://example.com/cover.jpg"');
+  });
+
+  it.each([false, true])('shows a recovered favicon only after loading and respects disposal (%s)', async disposed => {
+    const fallback = 'https://example.com/current.ico';
+    mutation.mockResolvedValue(fallback);
+    const listeners = {};
+    const parent = { append: vi.fn() };
+    const slot = { style: {}, parentElement: parent, remove: vi.fn() };
+    const img = {
+      style: {}, src: 'https://example.com/deleted.ico',
+      getAttribute: () => 'https://example.com/deleted.ico', closest: () => slot,
+      addEventListener: (name, listener) => { listeners[name] = listener; }, removeEventListener: vi.fn(),
+    };
+    const cleanup = Hydrate.link({ querySelectorAll: () => [img] }, { id: 'tile' }, { _box: { _id: 'box' }, _mode: 'view' });
+    listeners.error();
+    if (disposed) cleanup();
+    await Promise.resolve();
+    if (disposed) {
+      expect(parent.append).not.toHaveBeenCalled();
+      expect(img.src).toBe('https://example.com/deleted.ico');
+    } else {
+      expect(img.src).toBe(fallback);
+      expect(img.loading).toBe('eager');
+      expect(parent.append).toHaveBeenCalledWith(slot);
+      expect(slot.style.visibility).toBe('hidden');
+      listeners.load();
+      expect(img.style.visibility).toBe('');
+      expect(slot.style.visibility).toBe('');
+      cleanup();
+    }
   });
 });

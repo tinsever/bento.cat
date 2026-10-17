@@ -77,6 +77,19 @@ describe('automatic link previews', () => {
     expect(await jobs(t)).toEqual([]);
   });
 
+  it('offers a display fallback for mismatched saved provenance without overwriting the saved image', async () => {
+    const original = { id: 'link', type: 'link', url: URL, title: 'My title', icon: { src: 'https://example.com/deleted.ico' } };
+    const fresh = { ...original, icon: { src: 'https://images.example.com/current.ico' } };
+    const source = previewSource(fresh);
+    const { t, boxId } = await setup({ ...original, previewSource: source });
+    await t.run(ctx => ctx.db.patch(boxId, { linkPreviews: [{ tileId: original.id, url: original.url, type: original.type, base: source, data: source, checkedAt: Date.now(), incomplete: false }] }));
+    const fallback = await t.mutation(api.links.retryPreview, { boxId, tileId: original.id, src: original.icon.src });
+    expect(fallback).toBe(fresh.icon.src);
+    expect((await view(t)).tiles[0].icon).toEqual(original.icon);
+    expect((await t.run(ctx => ctx.db.get(boxId))).tiles[0].icon).toEqual(original.icon);
+    expect(await jobs(t)).toEqual([]);
+  });
+
   it.each(['link', 'music'])('recovers a missing stored %s image before its metadata becomes stale', async type => {
     const url = type === 'music' ? 'https://open.spotify.com/track/cats' : URL;
     if (type === 'music') vi.stubGlobal('fetch', vi.fn(async raw => String(raw).includes('/oembed?')

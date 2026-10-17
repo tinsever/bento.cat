@@ -450,26 +450,43 @@ export const Hydrate = {
 // Stored previews can disappear independently of their metadata. Recover them
 // through the importer, which also preserves the owner's custom fields.
 function watchPreviewImages(el, t, root) {
-  let requested = false;
+  const recoveries = new Map();
+  let disposed = false;
   const cleanups = [];
   for (const img of el.querySelectorAll('.fav img, .preview.img img, .cover img, .vinyl image')) {
     const src = img.getAttribute('src') || img.getAttribute('href');
+    const slot = img.closest('.fav'), parent = slot?.parentElement;
     // SVG images do not expose complete/naturalWidth. A cached probe also
     // catches errors that happened before the compact record was hydrated.
     const loader = img.tagName === 'image' ? new Image() : img;
+    let failed = false;
     const fail = () => {
-      img.closest('.fav')?.remove();
+      if (failed) return;
+      failed = true;
+      slot?.remove();
       img.style.visibility = 'hidden';
-      if (requested || !root?._box?._id || root._mode === 'static') return;
-      requested = true;
-      mutation('links:retryPreview', { boxId: root._box._id, tileId: t.id, src }).catch(() => {});
+      if (!root?._box?._id || root._mode === 'static') return;
+      if (!recoveries.has(src)) recoveries.set(src, mutation('links:retryPreview', { boxId: root._box._id, tileId: t.id, src }));
+      recoveries.get(src).then(fallback => {
+        if (disposed || !safeSrc(fallback)) return;
+        const show = () => {
+          if (loader !== img) img.setAttribute('href', safeSrc(fallback));
+          img.style.visibility = '';
+          if (slot) slot.style.visibility = '';
+        };
+        loader.addEventListener('load', show, { once: true });
+        cleanups.push(() => loader.removeEventListener('load', show));
+        if (slot && parent) { slot.style.visibility = 'hidden'; parent.append(slot); }
+        loader.loading = 'eager';
+        loader.src = safeSrc(fallback);
+      }).catch(() => {});
     };
     loader.addEventListener('error', fail, { once: true });
     if (loader !== img) loader.src = src;
     if (loader.complete && loader.currentSrc && loader.naturalWidth === 0) fail();
     cleanups.push(() => loader.removeEventListener('error', fail));
   }
-  return () => cleanups.forEach(cleanup => cleanup());
+  return () => { disposed = true; cleanups.forEach(cleanup => cleanup()); };
 }
 
 export function updateHours(el, t) {

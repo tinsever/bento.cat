@@ -340,6 +340,14 @@ export const retryPreview = mutation({
       }
     }
     await queuePreviews(ctx, box, tileId);
+    // A save made by an older editor may have kept the deleted image while
+    // recording newer provenance. Use its current automatic image as a display
+    // fallback without overwriting the saved image or treating it as an edit.
+    const values = cached?.data?.values;
+    const fallback = tile.cover === src ? values?.cover
+      : tile.icon?.src === src ? values?.icon?.src
+      : tile.preview?.src === src ? values?.preview?.src : null;
+    return fallback && fallback !== src ? fallback : null;
   },
 });
 
