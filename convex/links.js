@@ -304,7 +304,11 @@ export async function queuePreviews(ctx, box, retryTileId) {
     const source = previewBaseline(tile);
     if (!retryTileId && now - source.fetchedAt < PREVIEW_STALE && !previous?.incomplete) continue;
     if (previous && now - previous.checkedAt < PREVIEW_RETRY) continue;
-    const entry = { tileId: tile.id, url: tile.url, type: tile.type, base: source, data: previous?.data || null, checkedAt: now, incomplete: !!previous?.incomplete };
+    // Compare future results against the saved tile, not the effective preview.
+    // Legacy tiles have no provenance: changing this base to the last refresh
+    // makes their original image look custom and brings deleted URLs back.
+    const base = previewBaseline(box.tiles.find(t => t.id === tile.id));
+    const entry = { tileId: tile.id, url: tile.url, type: tile.type, base, data: previous?.data || null, checkedAt: now, incomplete: !!previous?.incomplete };
     if (at >= 0) cached[at] = entry;
     else cached.push(entry);
     changed = true;
@@ -318,9 +322,23 @@ export async function queuePreviews(ctx, box, retryTileId) {
 export const retryPreview = mutation({
   args: { boxId: v.id('boxes'), tileId: v.string(), src: v.string() },
   handler: async (ctx, { boxId, tileId, src }) => {
-    const box = await ctx.db.get(boxId);
-    const tile = box && applyPreviews(box).find(t => t.id === tileId);
+    let box = await ctx.db.get(boxId);
+    if (!box?.ownerId || box.demo) return;
+    const tile = applyPreviews(box).find(t => t.id === tileId);
     if (!tile || !hasLinkPreview(tile) || !mediaUrls(tile).has(src)) return;
+    const saved = box.tiles.find(t => t.id === tileId);
+    const cached = box.linkPreviews?.find(p => p.tileId === tileId && p.url === tile.url && p.type === tile.type);
+    // Repair comparisons written by older refreshes immediately, even during
+    // the retry cooldown. The cache may already hold a working replacement.
+    if (!saved.previewSource && cached?.data) {
+      const base = previewBaseline(saved);
+      if (JSON.stringify(base) !== JSON.stringify(cached.base)) {
+        const linkPreviews = box.linkPreviews.map(p => p === cached ? { ...p, base } : p);
+        box = { ...box, linkPreviews };
+        await syncReferences(ctx, box.ownerId, box);
+        await ctx.db.patch(boxId, { linkPreviews });
+      }
+    }
     await queuePreviews(ctx, box, tileId);
   },
 });

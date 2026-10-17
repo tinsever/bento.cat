@@ -16,7 +16,7 @@ describe('favicon fallbacks', () => {
   it.each([false, true])('reveals the fallback when an image fails (already failed: %s)', complete => {
     const remove = vi.fn();
     let error;
-    const img = { complete, currentSrc: 'https://example.com/icon.png', naturalWidth: 0, getAttribute: () => 'https://example.com/icon.png', closest: () => ({ remove }), addEventListener: (_, listener) => { error = listener; }, removeEventListener: vi.fn() };
+    const img = { style: {}, complete, currentSrc: 'https://example.com/icon.png', naturalWidth: 0, getAttribute: () => 'https://example.com/icon.png', closest: () => ({ remove }), addEventListener: (_, listener) => { error = listener; }, removeEventListener: vi.fn() };
     const cleanup = Hydrate.link({ querySelectorAll: () => [img] });
     if (!complete) error();
     expect(remove).toHaveBeenCalledTimes(1);
@@ -36,11 +36,13 @@ describe('favicon fallbacks', () => {
     mutation.mockClear();
     const listeners = [];
     const imgs = Array.from({ length: 2 }, () => ({
+      style: {},
       getAttribute: () => 'https://example.com/image.png', closest: () => null,
       addEventListener: (_, listener) => listeners.push(listener), removeEventListener: vi.fn(),
     }));
     const cleanup = Hydrate[type]({ querySelectorAll: () => imgs }, { id: 'tile' }, { _box: { _id: 'box' }, _mode: 'view' });
     listeners.forEach(listener => listener());
+    imgs.forEach(img => expect(img.style.visibility).toBe('hidden'));
     expect(mutation).toHaveBeenCalledExactlyOnceWith('links:retryPreview', { boxId: 'box', tileId: 'tile', src: 'https://example.com/image.png' });
     cleanup();
     imgs.forEach((img, i) => expect(img.removeEventListener).toHaveBeenCalledWith('error', listeners[i]));

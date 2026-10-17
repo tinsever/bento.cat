@@ -459,6 +459,7 @@ function watchPreviewImages(el, t, root) {
     const loader = img.tagName === 'image' ? new Image() : img;
     const fail = () => {
       img.closest('.fav')?.remove();
+      img.style.visibility = 'hidden';
       if (requested || !root?._box?._id || root._mode === 'static') return;
       requested = true;
       mutation('links:retryPreview', { boxId: root._box._id, tileId: t.id, src }).catch(() => {});

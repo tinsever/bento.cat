@@ -45,6 +45,38 @@ beforeEach(() => { vi.useFakeTimers(); mockSite(); });
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('automatic link previews', () => {
+  it('keeps legacy automatic images refreshed across repeated refreshes', async () => {
+    const original = { id: 'legacy', type: 'link', url: URL, title: 'My title', icon: { src: 'https://example.com/deleted.ico' }, preview: null };
+    const { t, boxId } = await setup(original);
+    mockSite({ icon: 'first-icon', cover: 'first-cover' });
+    await refresh(t, boxId);
+    const first = (await view(t)).tiles[0];
+    expect(first.icon.src).not.toBe(original.icon.src);
+
+    vi.advanceTimersByTime(PREVIEW_STALE);
+    mockSite({ icon: 'second-icon', cover: 'second-cover' });
+    await refresh(t, boxId);
+    const second = (await view(t)).tiles[0];
+    expect(second.icon.src).not.toBe(original.icon.src);
+    expect(second.icon.src).not.toBe(first.icon.src);
+    expect(second.preview.src).not.toBe(first.preview.src);
+    expect(second.title).toBe('My title');
+    expect((await uploads(t)).filter(file => file.referenced).map(file => file.url).sort()).toEqual([second.icon.src, second.preview.src].sort());
+  });
+
+  it('repairs an already corrupted legacy comparison during the retry cooldown', async () => {
+    const original = { id: 'legacy', type: 'music', url: 'https://open.spotify.com/track/cats', title: 'My title', cover: 'https://example.com/deleted.jpg' };
+    const { t, boxId } = await setup(original);
+    const fresh = { ...original, title: 'Automatic title', cover: 'https://images.example.com/fresh.jpg' };
+    const source = previewSource(fresh);
+    await t.run(ctx => ctx.db.patch(boxId, { linkPreviews: [{ tileId: original.id, url: original.url, type: original.type, base: source, data: source, checkedAt: Date.now(), incomplete: false }] }));
+    expect((await view(t)).tiles[0].cover).toBe(original.cover);
+
+    await t.mutation(api.links.retryPreview, { boxId, tileId: original.id, src: original.cover });
+    expect((await view(t)).tiles[0]).toMatchObject({ title: original.title, cover: fresh.cover });
+    expect(await jobs(t)).toEqual([]);
+  });
+
   it.each(['link', 'music'])('recovers a missing stored %s image before its metadata becomes stale', async type => {
     const url = type === 'music' ? 'https://open.spotify.com/track/cats' : URL;
     if (type === 'music') vi.stubGlobal('fetch', vi.fn(async raw => String(raw).includes('/oembed?')
