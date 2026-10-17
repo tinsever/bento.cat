@@ -249,7 +249,8 @@ body.is-dragging, body.is-dragging * { cursor: grabbing !important; user-select:
 
 .t-note { --py: 22px; --px: 24px; padding: var(--py) var(--px); }
 .t-note.s-curl { --py: 18px; --px: 18px; }
-.note-text { font-size: 20px; line-height: 27px; letter-spacing: -.01em; overflow-wrap: anywhere; min-height: 27px; }
+.note-text { font-size: 20px; line-height: 27px; letter-spacing: -.01em; overflow-wrap: anywhere; min-height: 0; max-height: 100%; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--note-lines, 3); overflow: hidden; }
+.note-text[contenteditable]:focus { display: block; overflow-y: auto; }
 .t-note.s-curl .note-text { font-size: 15px; line-height: 20px; }
 .note-text b { font-weight: 600; }
 .note-meta { flex-shrink: 0; margin-top: 8px; }
@@ -378,6 +379,7 @@ cite { display: block; margin-top: 8px; font-style: normal; font-size: 13px; lin
 .t-music { flex-direction: row; align-items: center; gap: 16px; }
 .rec { position: relative; height: 100%; aspect-ratio: 119 / 100; flex-shrink: 0; container-type: size; }
 .cover { position: absolute; left: 0; top: 0; height: 100%; aspect-ratio: 1; border-radius: 12px; background-size: cover; background-color: #D9CBB0; z-index: 1; }
+.cover img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
 .rec .vinyl { position: absolute; left: 27cqh; top: 4cqh; height: 92cqh; aspect-ratio: 1; }
 .vinyl svg { width: 100%; height: 100%; display: block; }
 .view .t-music:hover .vinyl svg { animation: spin 2.4s linear infinite; }
@@ -441,6 +443,9 @@ cite { display: block; margin-top: 8px; font-style: normal; font-size: 13px; lin
 @keyframes rec-blink { 50% { opacity: .3; } }
 
 /* ---------- good time to write ---------- */
+
+.t-hours { overflow: visible; }
+.t-hours:has(.hrs-bar.hovering), .t-hours:has(.hrs-bar.setting) { z-index: 3; }
 
 .hrs { display: flex; flex-direction: column; gap: 8px; }
 .hrs-bar { position: relative; height: 28px; cursor: crosshair; }

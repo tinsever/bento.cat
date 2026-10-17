@@ -247,7 +247,7 @@ R.music = (t, c) => {
   const go = !t.url ? '' : service
     ? `<${play} class="listen"><span class="sp-dot">${spotifyGlyph()}</span>Play</${play.split(' ')[0]}>`
     : `<span class="listen plain">Listen ${I.arrow('currentColor', 12)}</span>`;
-  return `<div class="rec"><div class="vinyl">${vinylSvg(null, t.id)}</div><div class="cover" style="${bg(t.cover, '60%')}"></div></div>
+  return `<div class="rec"><div class="vinyl">${vinylSvg(null, t.id)}</div><div class="cover">${safeSrc(t.cover) ? `<img src="${safeSrc(t.cover)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ''}</div></div>
     <div class="music-info"><div class="music-text"><div class="t-title ed" ${ce(c, 'title')} data-ph="Title">${esc(t.title)}</div><div class="t-sub">${esc(t.sub || service)}</div></div>${go}</div>`;
 };
 
@@ -364,7 +364,7 @@ export const Tiles = {
       if (el._hyd) continue;
       el._hyd = true;
       const t = root._box.tiles.find(x => x.id === el.dataset.id);
-      if (t && Hydrate[t.type]) Hydrate[t.type](el, t, root);
+      if (t && Hydrate[t.type]) el._cleanup = Hydrate[t.type](el, t, root);
     }
   },
 };
@@ -372,13 +372,23 @@ export const Tiles = {
 /* ---------- things that need a live element ---------- */
 
 export const Hydrate = {
-  link(el) {
-    const img = el.querySelector('.fav img');
-    if (!img) return;
-    const fail = () => img.closest('.fav').remove();
-    img.addEventListener('error', fail, { once: true });
-    if (img.complete && img.currentSrc && img.naturalWidth === 0) fail();
-    return () => img.removeEventListener('error', fail);
+  link(el, t, root) { return watchPreviewImages(el, t, root); },
+  music(el, t, root) { return watchPreviewImages(el, t, root); },
+
+  note(el) {
+    const text = el.querySelector('.note-text');
+    if (!text) return;
+    const fit = () => {
+      const style = getComputedStyle(el), meta = el.querySelector('.note-meta');
+      const available = el.clientHeight - parseFloat(style.paddingTop) - parseFloat(style.paddingBottom)
+        - (meta ? meta.offsetHeight + parseFloat(getComputedStyle(meta).marginTop) : 0);
+      const lines = Math.max(1, Math.floor(available / parseFloat(getComputedStyle(text).lineHeight)));
+      text.style.setProperty('--note-lines', lines);
+    };
+    const observer = new ResizeObserver(fit);
+    observer.observe(el);
+    fit();
+    return () => observer.disconnect();
   },
   hours(el, t) { updateHours(el, t); },
 
@@ -436,6 +446,30 @@ export const Hydrate = {
     return () => observer.disconnect();
   },
 };
+
+// Stored previews can disappear independently of their metadata. Recover them
+// through the importer, which also preserves the owner's custom fields.
+function watchPreviewImages(el, t, root) {
+  let requested = false;
+  const cleanups = [];
+  for (const img of el.querySelectorAll('.fav img, .preview.img img, .cover img, .vinyl image')) {
+    const src = img.getAttribute('src') || img.getAttribute('href');
+    // SVG images do not expose complete/naturalWidth. A cached probe also
+    // catches errors that happened before the compact record was hydrated.
+    const loader = img.tagName === 'image' ? new Image() : img;
+    const fail = () => {
+      img.closest('.fav')?.remove();
+      if (requested || !root?._box?._id || root._mode === 'static') return;
+      requested = true;
+      mutation('links:retryPreview', { boxId: root._box._id, tileId: t.id, src }).catch(() => {});
+    };
+    loader.addEventListener('error', fail, { once: true });
+    if (loader !== img) loader.src = src;
+    if (loader.complete && loader.currentSrc && loader.naturalWidth === 0) fail();
+    cleanups.push(() => loader.removeEventListener('error', fail));
+  }
+  return () => cleanups.forEach(cleanup => cleanup());
+}
 
 export function updateHours(el, t) {
   const her = hoursIn(t.tz), off = tzOffset(t.tz);

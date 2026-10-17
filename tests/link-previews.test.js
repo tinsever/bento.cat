@@ -45,6 +45,39 @@ beforeEach(() => { vi.useFakeTimers(); mockSite(); });
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); vi.unstubAllGlobals(); });
 
 describe('automatic link previews', () => {
+  it.each(['link', 'music'])('recovers a missing stored %s image before its metadata becomes stale', async type => {
+    const url = type === 'music' ? 'https://open.spotify.com/track/cats' : URL;
+    if (type === 'music') vi.stubGlobal('fetch', vi.fn(async raw => String(raw).includes('/oembed?')
+      ? new Response(JSON.stringify({ title: 'Cat song', thumbnail_url: 'https://images.example.com/cover.png' })) : image('cover')));
+    const { t, a, boxId, save } = await setup({ id: 'note', type: 'note', html: 'Hello' });
+    const imported = await a.action(api.links.unfurl, { url });
+    await save([{ ...imported, id: 'broken', title: 'My title' }]);
+    const src = type === 'music' ? imported.cover : imported.icon.src;
+    const missing = (await uploads(t)).find(file => file.url === src);
+    await t.run(ctx => ctx.storage.delete(missing.storageId));
+
+    await t.mutation(api.links.retryPreview, { boxId, tileId: 'broken', src });
+    vi.advanceTimersByTime(0);
+    await t.finishInProgressScheduledFunctions();
+    const fresh = (await view(t)).tiles[0];
+    expect(fresh.title).toBe('My title');
+    const replacement = (await uploads(t)).find(file => file.url === (type === 'music' ? fresh.cover : fresh.icon.src) && file.storageId !== missing.storageId);
+    expect(replacement).toBeDefined();
+    expect(replacement.referenced).toBe(true);
+    expect(await t.run(ctx => ctx.db.system.get(replacement.storageId))).not.toBeNull();
+    const checkedAt = (await t.run(ctx => ctx.db.get(boxId))).linkPreviews[0].checkedAt;
+    vi.advanceTimersByTime(1);
+    await t.mutation(api.links.retryPreview, { boxId, tileId: 'broken', src });
+    expect((await t.run(ctx => ctx.db.get(boxId))).linkPreviews[0].checkedAt).toBe(checkedAt);
+  });
+
+  it('ignores reports for URLs and tiles that do not belong to the displayed preview', async () => {
+    const { t, boxId, tile } = await setup();
+    await t.mutation(api.links.retryPreview, { boxId, tileId: tile.id, src: 'https://unrelated.example/image.png' });
+    await t.mutation(api.links.retryPreview, { boxId, tileId: 'missing', src: tile.icon.src });
+    expect((await t.run(ctx => ctx.db.get(boxId))).linkPreviews || []).toEqual([]);
+  });
+
   it.each(['link', 'music', 'video'])('replaces automatic text after a failed first %s import recovers', async type => {
     const original = { id: 'tile', type, url: URL, title: type === 'link' ? 'Example' : '', sub: '', meta: '' };
     const { t, boxId } = await setup({ ...original, previewSource: previewSource(original, 0) });

@@ -72,7 +72,7 @@ export const Box = {
       grid.append(h(`<div class="tile addslot s-curl" data-addslot role="button" tabindex="0" aria-label="Add a tile">${I.paw('#BDBDBD', 22)}<span>it fits here</span></div>`));
     }
 
-    for (const id of [...els.keys()]) if (!seen.has(id)) els.delete(id);
+    for (const [id, el] of els) if (!seen.has(id)) { el._cleanup?.(); els.delete(id); }
     root.replaceChildren(frag);
     if (o.selectedId) els.get(o.selectedId)?.classList.add('selected');
     if (first) Box.flip(root, first);
@@ -110,6 +110,8 @@ export const Box = {
     }
     const key = JSON.stringify(t) + size + c.mode + Tiles.liveKey(t, c.box);
     if (el._key !== key) {
+      el._cleanup?.();
+      el._cleanup = null;
       el.innerHTML = Tiles.render(t, tc);
       el._key = key;
       el._hyd = false;

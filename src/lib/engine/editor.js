@@ -1958,6 +1958,7 @@ export function EditorView(app, box, opts = {}) {
 
   return () => {
     alive = false;
+    for (const el of canvas.querySelectorAll('.tile')) el._cleanup?.();
     clearTimeout(S.saveT); clearTimeout(S.idleT); clearTimeout(S.clBye);
     S.rec?.stop();
     saves.dispose();

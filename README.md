@@ -53,6 +53,7 @@ editor refreshes previews older than 24 hours in the background, with failed
 requests retried on a later load after an hour. Refreshes keep custom text, images,
 cropping and layout, and reuse unchanged stored images. Older widgets keep their
 existing titles because they did not record whether the owner had changed them.
+Failed cover and favicon loads also request a refresh, at most once per tile per hour.
 
 ## Contributing and license
 

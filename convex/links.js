@@ -1,11 +1,12 @@
 import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
-import { action, internalAction, internalMutation, internalQuery, query } from './_generated/server';
+import { action, internalAction, internalMutation, internalQuery, mutation, query } from './_generated/server';
 import { requireOwnBox } from './lib';
 import { limit } from './limits';
 import { storePreview } from './media';
 import { applyPreviews, hasLinkPreview, PREVIEW_RETRY, PREVIEW_STALE, previewBaseline, previewSource } from '../src/lib/link-previews';
 import { syncReferences } from './files';
+import { mediaUrls } from './mediaPolicy';
 
 /* Link previews, read on the server so the browser never has to trust a stranger's page.
    Everything fetched here goes through publicUrl() first. */
@@ -290,17 +291,18 @@ export const previews = query({
   },
 });
 
-export async function queuePreviews(ctx, box) {
+export async function queuePreviews(ctx, box, retryTileId) {
   if (!box.ownerId || box.demo) return;
   const now = Date.now();
   const cached = [...(box.linkPreviews || [])];
   let changed = false;
   for (const tile of applyPreviews(box)) {
+    if (retryTileId && tile.id !== retryTileId) continue;
     if (!hasLinkPreview(tile) || !publicUrl(tile.url)) continue;
     const at = cached.findIndex(p => p.tileId === tile.id);
     const previous = at >= 0 && cached[at].url === tile.url && cached[at].type === tile.type ? cached[at] : null;
     const source = previewBaseline(tile);
-    if (now - source.fetchedAt < PREVIEW_STALE && !previous?.incomplete) continue;
+    if (!retryTileId && now - source.fetchedAt < PREVIEW_STALE && !previous?.incomplete) continue;
     if (previous && now - previous.checkedAt < PREVIEW_RETRY) continue;
     const entry = { tileId: tile.id, url: tile.url, type: tile.type, base: source, data: previous?.data || null, checkedAt: now, incomplete: !!previous?.incomplete };
     if (at >= 0) cached[at] = entry;
@@ -310,6 +312,18 @@ export async function queuePreviews(ctx, box) {
   }
   if (changed) await ctx.db.patch(box._id, { linkPreviews: cached });
 }
+
+// A failed image may be newer than the normal refresh window. Only retry a URL
+// actually displayed by this tile; the client cannot choose what we fetch.
+export const retryPreview = mutation({
+  args: { boxId: v.id('boxes'), tileId: v.string(), src: v.string() },
+  handler: async (ctx, { boxId, tileId, src }) => {
+    const box = await ctx.db.get(boxId);
+    const tile = box && applyPreviews(box).find(t => t.id === tileId);
+    if (!tile || !hasLinkPreview(tile) || !mediaUrls(tile).has(src)) return;
+    await queuePreviews(ctx, box, tileId);
+  },
+});
 
 export const previewJob = internalQuery({
   args: { boxId: v.id('boxes'), tileId: v.string(), url: v.string(), checkedAt: v.number() },
