@@ -585,7 +585,7 @@ button.knock:hover { background: #2C2C2C; }
 .tb-done { height: 32px; padding: 0 14px; border-radius: 16px; background: var(--eye); color: var(--fur); font-weight: 600; font-size: 13px; }
 
 /* dock */
-.dock { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 250; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; width: min(560px, calc(100% - 24px)); padding: 8px; background: #fff; border: 1px solid #E4E4E0; border-radius: 22px; box-shadow: 0 14px 34px -18px rgba(22, 22, 22, .22); }
+.dock { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); z-index: 250; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; width: max-content; min-width: min(560px, calc(100% - 24px)); max-width: calc(100% - 24px); padding: 8px; background: #fff; border: 1px solid #E4E4E0; border-radius: 22px; box-shadow: 0 14px 34px -18px rgba(22, 22, 22, .22); }
 .dock-tools { position: relative; display: flex; align-items: center; gap: 4px; height: 40px; }
 .dock-b { width: 40px; height: 40px; border-radius: 13px; display: grid; place-items: center; flex-shrink: 0; transition: background .15s; }
 .dock-b:hover { background: var(--curb); }

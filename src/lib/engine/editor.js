@@ -775,6 +775,10 @@ export function EditorView(app, box, opts = {}) {
 
   canvas.addEventListener('click', e => {
     if (performance.now() - (S.justDragged || 0) < 120) return;
+    // A click anywhere but the selected tile moves the selection there, or drops it.
+    // Buttons and fields inside a tile skip the press handler, so catch them here.
+    const key = e.target.closest('[data-key]')?.dataset.key;
+    if (key !== S.sel) select(key && find(key) ? key : null);
     const ed = e.target.closest('[data-edact]');
     if (ed) {
       e.stopPropagation();
